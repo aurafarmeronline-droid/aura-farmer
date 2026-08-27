@@ -5,6 +5,10 @@
    │  Esta es la BASE del proyecto. Toda la mecánica del juego  │
    │  se monta encima. Marcado para revisión dedicada futura.   │
    └──────────────────────────────────────────────────────────┘
+   v0.6.1-web — Bandas ensanchadas (parche provisorio, ver Tanda 4) +
+     resincronizados los dos usos internos de clasificarBanda que traducían
+     puntaje→banda con umbrales viejos (confianza facial y promedio de
+     keyframe). Sin esto quedaban desalineados con las bandas nuevas.
    v0.6-web — ScoreEngine: compara landmarks reales contra una
    pose objetivo y devuelve puntaje. Puro (sin DOM, sin cámara,
    sin canvas) para que sea testeable con node directo.
@@ -17,9 +21,10 @@
         timer (Opción 1 - temporizado). Migrar a Opción 2 (sostenimiento)
         = cambiar SOLO quién dispara el keyframe; la fórmula ya queda lista.
 
-   Bandas de precisión (igual que el .pyw):
-     PERFECT ≤20°  100pts   GOOD ≤35°  60pts
-     OK      ≤50°   30pts   MISS >50°   0pts
+   Bandas de precisión (ensanchadas v0.6.1-web — parche provisorio hasta
+   auditoría con video real, Tanda 4):
+     PERFECT ≤30°  100pts   GOOD ≤50°  60pts
+     OK      ≤70°   30pts   MISS >70°   0pts
    Combo: hits consecutivos sin MISS multiplican x(1+combo*0.1), tope x2.0
 
    MODELO DE "AURA" (intuición, ver auditoría futura):
@@ -68,9 +73,9 @@ const ScoreEngine = (() => {
   }
 
   function clasificarBanda(errorPromedio) {
-    if (errorPromedio <= 20) return { banda: 'PERFECT', puntos: 100 };
-    if (errorPromedio <= 35) return { banda: 'GOOD',    puntos: 60  };
-    if (errorPromedio <= 50) return { banda: 'OK',      puntos: 30  };
+    if (errorPromedio <= 30) return { banda: 'PERFECT', puntos: 100 };
+    if (errorPromedio <= 50) return { banda: 'GOOD',    puntos: 60  };
+    if (errorPromedio <= 70) return { banda: 'OK',      puntos: 30  };
     return { banda: 'MISS', puntos: 0 };
   }
 
@@ -176,7 +181,10 @@ const ScoreEngine = (() => {
       if (blendshapesReq.length > 0) {
         const confianza = evaluarConfianzaFacial(blendshapes, blendshapesReq);
         const puntos = Math.round(100 * confianza);
-        const banda = clasificarBanda(confianza >= 0.8 ? 10 : confianza >= 0.45 ? 30 : confianza >= 0.2 ? 45 : 60).banda;
+        // Valores 10/40/60/80 son proxies de "error en grados" elegidos para
+        // caer en la banda correcta según los umbrales de clasificarBanda
+        // (30/50/70) — no son ángulos reales, solo aprovechan la función.
+        const banda = clasificarBanda(confianza >= 0.8 ? 10 : confianza >= 0.45 ? 40 : confianza >= 0.2 ? 60 : 80).banda;
         if (banda === 'MISS') estado.comboActual = 0; else estado.comboActual += 1;
         registrar(puntos, banda);
         return { banda, comboActual: estado.comboActual,
@@ -250,8 +258,10 @@ const ScoreEngine = (() => {
     estado.puntajeTotal += puntosKeyframe;
 
     // Banda representativa del promedio, para el cartel del "pam".
+    // Mismo truco de proxies que en evaluarConfianzaFacial: 10/40/60/80
+    // resincronizados con los umbrales 30/50/70 de clasificarBanda.
     const bandaPromedio = clasificarBanda(
-      promedioBase >= 80 ? 10 : promedioBase >= 45 ? 30 : promedioBase >= 20 ? 45 : 60
+      promedioBase >= 80 ? 10 : promedioBase >= 45 ? 40 : promedioBase >= 20 ? 60 : 80
     ).banda;
 
     // Limpiamos la ventana: cada keyframe cobra su propio tramo.

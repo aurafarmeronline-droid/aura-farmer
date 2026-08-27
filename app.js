@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — app.js
+   v0.9.4-web — Auditoría bandas/timer: cartelito con histéresis+cooldown
+     (antes redisparaba en cada cruce de banda por ruido de landmarks);
+     KEYFRAME_INTERVALO_S 3→10s (ronda de 3 poses pasa de 9s a 30s reales).
    v0.9.3-web — T3: blendshapes de cara → ScoreEngine. vision.js emite
      dict {nombre:score}; app pasa pose completa + blendshapes; motor
      aplica precisión × confianza_facial (poses Yagami/Rugido/Chad).
@@ -38,7 +41,8 @@ let scoreState = null;      // estado del ScoreEngine para la pose actual
 let keyframeTimer = null;   // intervalo que dispara el "pam"
 let keyframeCuenta = 0;     // segundos restantes al próximo pam
 
-const KEYFRAME_INTERVALO_S = 3;   // Opción 1: keyframe temporizado cada 3s
+const KEYFRAME_INTERVALO_S = 10;  // Opción 1: keyframe temporizado cada 10s
+                                   // (3 poses × 10s = 30s de ronda; antes era 9s)
 
 /** Crea una ronda nueva para el jugador dado ('A' | 'B'). */
 function crearRonda(jugador = 'A') {
@@ -110,7 +114,7 @@ function startFarmeo() {
     rondaState = crearRonda(dueloState.turnoActual);
   }
   scoreState = ScoreEngine.crearEstado();
-  ultimaBandaMostrada = null;   // cartelito arranca limpio cada farmeo
+  resetBandaPopEstado();        // cartelito arranca limpio cada farmeo
   actualizarHud({ banda: null, comboActual: 0, puntajeTotal: 0 });
   pintarPoseActual();
   arrancarKeyframeTimer();
@@ -209,13 +213,59 @@ function pintarComboVivo(banda, comboActual) {
   mostrarBandaPop(banda);
 }
 
-/* Cartelito MISS/GOOD/PERFECT/OK (T3). Solo redispara cuando CAMBIA la banda,
-   así no titila en cada frame. La animación CSS se re-lanza quitando/poniendo
-   la clase 'show' (forzando reflow). */
-let ultimaBandaMostrada = null;
+/* Cartelito MISS/GOOD/PERFECT/OK (T3) — v0.9.4-web: antes redisparaba en
+   cada frame que CAMBIABA de banda, y a 30fps con landmarks ruidosos la
+   banda cruza el límite constantemente (ej. 34°↔36° = GOOD↔OK todo el
+   tiempo) → titileo. Ahora exige (a) que la banda se sostenga N frames
+   seguidos antes de confirmarla, y (b) un cooldown mínimo entre pops para
+   no atropellar la animación anterior (0.7s en CSS). La decisión es una
+   función PURA (debeDispararBandaPop) separada del DOM para poder testearla
+   headless; mostrarBandaPop es solo el wrapper que pinta. */
+const BANDA_ESTABILIDAD_FRAMES = 3;    // frames seguidos iguales para confirmar la banda
+const BANDA_POP_COOLDOWN_MS    = 650;  // no repetir pop antes de ~lo que dura la animación
+
+const bandaPopEstado = {
+  bandaCandidata: null,
+  bandaCandidataCuenta: 0,
+  ultimaBandaMostrada: null,
+  ultimoPopTs: -Infinity   // -Infinity, no 0: si no, el cooldown bloquea el
+                           // primer pop cuando ahoraMs todavía es chico
+};
+
+function resetBandaPopEstado() {
+  bandaPopEstado.bandaCandidata = null;
+  bandaPopEstado.bandaCandidataCuenta = 0;
+  bandaPopEstado.ultimaBandaMostrada = null;
+  bandaPopEstado.ultimoPopTs = -Infinity;
+}
+
+/**
+ * Lógica pura: decide si corresponde disparar el pop AHORA. Muta `estado`
+ * in-place (candidata, contador, última mostrada, timestamp). Sin DOM →
+ * testeable con node directo, pasando un estado y timestamps sintéticos.
+ */
+function debeDispararBandaPop(banda, estado, ahoraMs) {
+  if (!banda) return false;
+
+  if (banda === estado.bandaCandidata) {
+    estado.bandaCandidataCuenta += 1;
+  } else {
+    estado.bandaCandidata = banda;
+    estado.bandaCandidataCuenta = 1;
+  }
+
+  if (estado.bandaCandidataCuenta < BANDA_ESTABILIDAD_FRAMES) return false;
+  if (banda === estado.ultimaBandaMostrada) return false;
+  if (ahoraMs - estado.ultimoPopTs < BANDA_POP_COOLDOWN_MS) return false;
+
+  estado.ultimaBandaMostrada = banda;
+  estado.ultimoPopTs = ahoraMs;
+  return true;
+}
+
 function mostrarBandaPop(banda) {
-  if (!banda || banda === ultimaBandaMostrada) return;
-  ultimaBandaMostrada = banda;
+  if (!debeDispararBandaPop(banda, bandaPopEstado, performance.now())) return;
+
   const pop = document.getElementById('banda-pop');
   if (!pop) return;
 
