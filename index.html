@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aura Farmer</title>
+<base href="/aura-farmer/">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ SPRITE DE ICONOS (línea, monocromáticos) ============
+     Se referencian con <svg class="ic"><use href="#ic-xxx"/></svg>.
+     Heredan color vía currentColor → un set, mil usos, cero deps. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="ic-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/>
+    </symbol>
+    <symbol id="ic-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 10.5V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-3.5l5 3.5V7l-5 3.5z"/>
+    </symbol>
+    <symbol id="ic-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v1a3 3 0 0 0 3 3M18 6h3v1a3 3 0 0 1-3 3"/><path d="M9 18h6M10 18v-2.5M14 18v-2.5M8 21h8"/>
+    </symbol>
+    <symbol id="ic-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>
+    </symbol>
+    <symbol id="ic-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>
+    </symbol>
+    <symbol id="ic-scroll" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 3h11a2 2 0 0 1 2 2v13a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5"/><path d="M4 5a2 2 0 0 1 4 0v2H4z"/><path d="M9 8h7M9 12h7M9 16h4"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div id="app">
+
+  <!-- ============ INICIO ============ -->
+  <section id="screen-inicio" class="screen">
+    <video id="bg-video" autoplay loop muted playsinline>
+      <source src="bg.mp4" type="video/mp4">
+    </video>
+    <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:32px; position:relative; z-index:1;">
+      <div class="aura-ring">
+        <div class="avatar" style="width:120px;height:120px;font-size:36px;">AF</div>
+      </div>
+      <div style="text-align:center;">
+        <h1 class="screen__title" style="font-size:28px;">AURA FARMER</h1>
+        <p class="screen__subtitle" style="margin-bottom:0;">Farmeá tu aura. Ganá el duelo.</p>
+      </div>
+      <div style="width:100%; display:flex; flex-direction:column; gap:12px;">
+        <button class="btn btn--primary btn--block btn--lg" data-nav="screen-matchmaking"><svg class="ic"><use href="#ic-bolt"/></svg> MATCHMAKING</button>
+        <button class="btn btn--secondary btn--block btn--lg" data-nav="screen-farmeo"><svg class="ic"><use href="#ic-cam"/></svg> DUELO LOCAL</button>
+        <button class="btn btn--secondary btn--block" data-nav="screen-ranking"><svg class="ic"><use href="#ic-trophy"/></svg> RANKING</button>
+        <button class="btn btn--secondary btn--block" data-nav="screen-home"><svg class="ic"><use href="#ic-user"/></svg> PERFIL</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOME / PERFIL ============ -->
+  <section id="screen-home" class="screen hidden">
+    <h2 class="screen__title">Perfil</h2>
+    <p class="screen__subtitle">Tu aura, tu progreso</p>
+
+    <div class="profile-hero">
+      <div class="aura-ring">
+        <div class="avatar" id="profile-avatar">MX</div>
+      </div>
+      <div class="profile-name" id="profile-nombre">Maxi</div>
+      <div class="profile-rango">
+        <span class="profile-nivel" id="profile-nivel">Nivel 3</span>
+        <span class="profile-sep">·</span>
+        <span class="profile-aura" id="profile-aura">Iniciado</span>
+      </div>
+
+      <!-- Barra de progreso al siguiente nivel -->
+      <div class="nivel-bar">
+        <div class="nivel-bar__fill" id="nivel-bar-fill" style="width:0%;"></div>
+      </div>
+      <div class="nivel-bar__label" id="nivel-bar-label">0 / 500 pts al siguiente nivel</div>
+    </div>
+
+    <!-- Stats en fila con separadores -->
+    <div class="profile-stats">
+      <div class="profile-stat">
+        <div class="stat stat--lg profile-stat__num" id="profile-victorias">0</div>
+        <div class="profile-stat__label">Victorias</div>
+      </div>
+      <div class="profile-stat">
+        <div class="stat stat--lg profile-stat__num" id="profile-derrotas">0</div>
+        <div class="profile-stat__label">Derrotas</div>
+      </div>
+      <div class="profile-stat">
+        <div class="stat stat--lg profile-stat__num" id="profile-puntos">0</div>
+        <div class="profile-stat__label">Puntos</div>
+      </div>
+    </div>
+
+    <!-- Monedas -->
+    <div class="card mt-16">
+      <div class="row row--between">
+        <span style="color:var(--text-muted);">Monedas</span>
+        <span class="stat" id="profile-monedas" style="color:var(--combo); font-size:18px;">0</span>
+      </div>
+    </div>
+
+    <button class="btn btn--secondary btn--block mt-16">Editar perfil</button>
+  </section>
+
+  <!-- ============ MATCHMAKING ============ -->
+  <section id="screen-matchmaking" class="screen hidden">
+    <h2 class="screen__title">Matchmaking</h2>
+    <p class="screen__subtitle" id="mm-subtitulo">Jugá online con un amigo.</p>
+
+    <!-- Panel A: elegir modo (crear / unirse) -->
+    <div id="mm-panel-elegir" style="display:flex; flex-direction:column; gap:12px;">
+      <div class="card" style="text-align:center;">
+        <p style="font-size:13px; color:var(--text-secondary); margin:0 0 12px;">Creás una sala y le pasás el código a tu rival.</p>
+        <button class="btn btn--primary btn--block" id="mm-btn-crear">Crear sala</button>
+      </div>
+      <div class="card" style="text-align:center;">
+        <p style="font-size:13px; color:var(--text-secondary); margin:0 0 12px;">Tu rival ya creó la sala y te pasó el código.</p>
+        <input id="mm-input-codigo" type="text" maxlength="4"
+          placeholder="Código (ej: K7QM)"
+          style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:18px; text-align:center; letter-spacing:4px; text-transform:uppercase; background:var(--surface-1); color:var(--text-primary); margin-bottom:10px;">
+        <p id="mm-error" style="color:var(--text-danger); font-size:13px; margin:0 0 8px; display:none;"></p>
+        <button class="btn btn--secondary btn--block" id="mm-btn-unirse">Unirse a sala</button>
+      </div>
+      <button class="btn btn--ghost btn--block" data-nav="screen-inicio">Cancelar</button>
+    </div>
+
+    <!-- Panel B: esperando rival (creador) -->
+    <div id="mm-panel-espera" style="display:none; flex-direction:column; align-items:center; gap:20px;">
+      <div class="aura-ring"><div class="avatar" style="width:80px;height:80px;">?</div></div>
+      <div class="card" style="width:100%; text-align:center;">
+        <p style="font-size:13px; color:var(--text-secondary); margin:0 0 6px;">Pasale este código a tu rival:</p>
+        <div id="mm-codigo-display" style="font-size:40px; font-weight:700; letter-spacing:8px; color:var(--text-accent); font-family:var(--font-mono);">----</div>
+      </div>
+      <p style="font-size:13px; color:var(--text-muted);">Esperando que se conecte...</p>
+      <button class="btn btn--danger" id="mm-btn-cancelar-espera">Cancelar</button>
+    </div>
+
+    <!-- Panel C: rival encontrado → arrancar -->
+    <div id="mm-panel-listo" style="display:none; flex-direction:column; align-items:center; gap:16px;">
+      <div class="card" style="width:100%;">
+        <div class="row row--between" style="align-items:center;">
+          <div style="text-align:center; flex:1;">
+            <div class="avatar avatar--sm" id="mm-av-yo">MX</div>
+            <div style="font-size:12px; margin-top:4px;" id="mm-nombre-yo">Vos</div>
+          </div>
+          <span class="stat" style="color:var(--text-muted);">VS</span>
+          <div style="text-align:center; flex:1;">
+            <div class="avatar avatar--sm" id="mm-av-rival">?</div>
+            <div style="font-size:12px; margin-top:4px;" id="mm-nombre-rival">Rival</div>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn--primary btn--block btn--lg" id="mm-btn-empezar"><svg class="ic"><use href="#ic-bolt"/></svg> ¡Empezar duelo!</button>
+      <button class="btn btn--ghost btn--block" id="mm-btn-cancelar-listo">Cancelar</button>
+    </div>
+  </section>
+
+  <!-- ============ TRASPASO ============ -->
+  <section id="screen-traspaso" class="screen hidden">
+    <div class="traspaso">
+      <span class="badge badge--combo">Turno B</span>
+      <div class="avatar" style="width:88px;height:88px;">RV</div>
+      <div>
+        <h2 class="screen__title" style="text-align:center;">Le toca a Rival</h2>
+        <p class="screen__subtitle">Pasá el dispositivo</p>
+      </div>
+      <button class="btn btn--primary btn--lg" data-nav="screen-farmeo">Listo, empezar turno</button>
+    </div>
+  </section>
+
+  <!-- ============ FARMEO (cámara) ============ -->
+  <section id="screen-farmeo" class="screen hidden">
+    <h2 class="screen__title">Farmeo</h2>
+    <p class="screen__subtitle">Ronda 1 de 3 · Doble Bíceps</p>
+    <p class="encuadre-hint">📐 Encuadre: cara, torso y brazos · sentate a ~1m de la cámara</p>
+
+    <div class="viewfinder">
+      <video id="viewfinder-video" autoplay playsinline muted></video>
+      <canvas id="viewfinder-canvas"></canvas>
+      <div id="pose-status" class="pose-status hidden">🧠 cargando IA...</div>
+      <div id="banda-pop" class="banda-pop"></div>
+      <div id="viewfinder-error" class="viewfinder__error hidden">
+        <span class="viewfinder__error-icon">📷</span>
+        <p id="viewfinder-error-msg">Iniciando cámara...</p>
+      </div>
+    </div>
+
+    <div class="hud">
+      <span id="hud-combo" class="badge badge--combo">Combo ×1.0</span>
+      <span id="hud-score" class="stat stat--lg">0</span>
+      <span id="hud-proxima" class="badge">Próx: Rugido</span>
+    </div>
+
+    <button class="btn btn--secondary btn--block mt-24" data-nav="screen-veredicto">Terminar ronda (demo)</button>
+  </section>
+
+  <!-- ============ VEREDICTO ============ -->
+  <section id="screen-veredicto" class="screen hidden">
+    <h2 class="screen__title">Veredicto</h2>
+    <p class="screen__subtitle">Duelo terminado</p>
+
+    <div class="card" style="text-align:center;">
+      <div class="row row--between">
+        <div>
+          <div class="avatar avatar--sm">MX</div>
+          <div class="stat stat--lg mt-8">2</div>
+        </div>
+        <span class="screen__subtitle" style="margin:0;">rondas</span>
+        <div>
+          <div class="avatar avatar--sm">RV</div>
+          <div class="stat stat--lg mt-8">1</div>
+        </div>
+      </div>
+      <span class="badge badge--win mt-16">GANASTE</span>
+    </div>
+
+    <div class="jueces-grid mt-16">
+      <div class="card juez-card">
+        <div class="juez-card__label">Máquina 1<br>Cuerpo</div>
+        <span class="badge badge--win">✓</span>
+      </div>
+      <div class="card juez-card">
+        <div class="juez-card__label">Máquina 2<br>Cara</div>
+        <span class="badge badge--win">✓</span>
+      </div>
+      <div class="card juez-card">
+        <div class="juez-card__label">Público<br>Voto</div>
+        <span class="badge badge--lose">✗</span>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px;" class="mt-24">
+      <button class="btn btn--secondary" style="flex:1;" data-nav="screen-inicio">Salir</button>
+      <button class="btn btn--primary" style="flex:1;" data-nav="screen-matchmaking">Revancha</button>
+    </div>
+  </section>
+
+  <!-- ============ RANKING ============ -->
+  <section id="screen-ranking" class="screen hidden">
+    <h2 class="screen__title">Ranking</h2>
+    <p class="screen__subtitle">Top jugadores</p>
+
+    <div class="card"></div>
+  </section>
+
+  <!-- ============ HISTORIAL ============ -->
+  <section id="screen-historial" class="screen hidden">
+    <h2 class="screen__title">Historial</h2>
+    <p class="screen__subtitle">Tus últimos duelos</p>
+
+    <div class="card">
+      <div class="list-row">
+        <div class="list-row__main">
+          <div class="list-row__title">vs Rival</div>
+          <div class="list-row__meta">hoy · 2-1</div>
+        </div>
+        <span class="badge badge--win">+25</span>
+      </div>
+      <div class="list-row">
+        <div class="list-row__main">
+          <div class="list-row__title">vs Lux</div>
+          <div class="list-row__meta">ayer · 0-2</div>
+        </div>
+        <span class="badge badge--lose">-10</span>
+      </div>
+      <div class="list-row">
+        <div class="list-row__main">
+          <div class="list-row__title">vs CPU</div>
+          <div class="list-row__meta">ayer · 2-2</div>
+        </div>
+        <span class="badge">+5</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BOTTOM NAV ============ -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="bottom-nav__item active" data-nav="screen-inicio">
+      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-home"/></svg></span>Inicio
+    </button>
+    <button class="bottom-nav__item" data-nav="screen-ranking">
+      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-trophy"/></svg></span>Ranking
+    </button>
+    <button class="bottom-nav__item" data-nav="screen-historial">
+      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-scroll"/></svg></span>Historial
+    </button>
+    <button class="bottom-nav__item" data-nav="screen-home">
+      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-user"/></svg></span>Perfil
+    </button>
+  </nav>
+
+</div>
+
+<script src="store.js"></script>
+<script src="camera.js"></script>
+<script src="poses.js"></script>
+<script src="duelo.js"></script>
+<script src="score.js"></script>
+<!-- Firebase SDK (CDN modular → expuesto en window.__FIREBASE__ para online.js) -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import * as DB from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+  window.__FIREBASE__ = { initializeApp, DB };
+  // Avisamos a app.js que el SDK ya está listo.
+  window.dispatchEvent(new Event('firebase-ready'));
+</script>
+<script src="online.js"></script>
+<script type="module" src="vision.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
