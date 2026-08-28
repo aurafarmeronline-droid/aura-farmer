@@ -1,7 +1,10 @@
 /* ============================================================
    AURA FARMER — app.js
+   v0.9.6-web — Matchmaking automático completo (F4): mmBuscarAuto/
+     mmCancelarBusqueda enganchan buscarRival() real; onEmparejado reusa el
+     flujo escuchar-sala + heartbeat; timeout 20s vuelve al panel elegir.
    v0.9.5-web — Matchmaking automático (F1 layout): botón "Buscar rival" +
-     panel de búsqueda con spinner/cancelar. Handlers stub (lógica real F3/F4).
+     panel de búsqueda con spinner/cancelar.
    v0.9.4-web — Auditoría bandas/timer: cartelito con histéresis+cooldown
      (antes redisparaba en cada cruce de banda por ruido de landmarks);
      KEYFRAME_INTERVALO_S 3→10s (ronda de 3 poses pasa de 9s a 30s reales).
@@ -635,14 +638,33 @@ function mmError(msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 
-/* Matchmaking automático — F1: solo transición de panel. La lógica real
-   (transacción de cola, timeout 20s, emparejado) llega en F3/F4. */
+/* Matchmaking automático (F4). Al emparejar, engancha el MISMO flujo que
+   crear/unirse: escucha la sala + heartbeat, y salta a "listo" pintando al
+   rival. onEmparejado llega con {salaId, rol} ya listo en OnlineService. */
 function mmBuscarAuto() {
+  const perfil = Store.obtenerPerfil();
+  mmError('');
   mmMostrarPanel('mm-panel-buscando');
-  // TODO F4: OnlineService.buscarRival(perfil.nombre, {onEmparejado, onTimeout, onError})
+  OnlineService.buscarRival(perfil.nombre, {
+    onEmparejado: ({ salaId }) => {
+      mmSalaId = salaId;
+      mmEscucharSala();               // detecta estado 'jugando' → panel listo
+      OnlineService.iniciarHeartbeat();
+    },
+    onTimeout: () => {
+      mmMostrarPanel('mm-panel-elegir');
+      mmError('No encontramos rival ahora. Probá de nuevo o usá un código.');
+    },
+    onError: (err) => {
+      console.error('mmBuscarAuto:', err);
+      mmMostrarPanel('mm-panel-elegir');
+      mmError('No se pudo buscar rival. Revisá tu conexión.');
+    }
+  });
 }
+
 function mmCancelarBusqueda() {
-  // TODO F4: OnlineService.cancelarBusqueda()
+  OnlineService.cancelarBusqueda().catch(() => {});
   mmMostrarPanel('mm-panel-elegir');
 }
 
@@ -714,6 +736,7 @@ function mmEmpezarDuelo() {
 
 function limpiarMatchmaking() {
   if (mmUnsubSala) { mmUnsubSala(); mmUnsubSala = null; }
+  OnlineService.cancelarBusqueda().catch(() => {});   // por si salís mientras buscabas
   OnlineService.salir().catch(() => {});
   mmSalaId = null;
   mmError('');

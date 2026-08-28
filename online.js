@@ -1,9 +1,11 @@
 /* ============================================================
    AURA FARMER — online.js
+   v0.12-web — Matchmaking AUTOMÁTICO completo (F3): buscarRival() con
+     transacción sobre /cola/actual, notificación vía /colaNotificaciones,
+     crearSalaEmparejada(), cancelarBusqueda() y timeout de 20s. Reusa las
+     puras F2. Convive con el código de sala (no lo reemplaza).
    v0.11-web — Matchmaking AUTOMÁTICO (F2 lógica pura): slot mutex
      /cola/actual + decidirMatchmaking()/slotEsMio()/generarUidBusqueda().
-     Convive con el matchmaking por código de sala (no lo reemplaza).
-     Capa Firebase (F3) e integración app.js (F4) pendientes.
    v0.10-web — OnlineService: multiplayer 1v1 vía Firebase Realtime DB.
    Único módulo que toca Firebase (igual que store.js con localStorage).
    Todo lo demás lo ignora: app.js solo ve datos planos por callback.
@@ -304,6 +306,135 @@ const OnlineService = (() => {
     return { salaId: codigo, rol: 'B' };
   }
 
+  /* ─────────────────────────────────────────────────────────────
+     F3 — MATCHMAKING AUTOMÁTICO, capa Firebase. Usa las puras F2
+     (decidirMatchmaking / slotEsMio / generarUidBusqueda) sobre el slot
+     mutex /cola/actual y notifica al que espera vía /colaNotificaciones.
+
+     REGLAS DE SEGURIDAD (agregar al bloque de reglas de arriba):
+       "cola":              { ".read": true, ".write": true },
+       "colaNotificaciones":{ ".read": true, ".write": true }
+     ───────────────────────────────────────────────────────────── */
+
+  let busqueda = null;   // { uid, timeoutId, unsubNotif } de la búsqueda en curso
+
+  /**
+   * Crea una sala con AMBOS jugadores ya presentes (la usa el que empareja:
+   * él es A, el que esperaba es B). Distinta de crearSala(), que deja B vacío.
+   */
+  async function crearSalaEmparejada(nombreA, nombreB) {
+    const { ref, get, set, onDisconnect } = fb.DB;
+    for (let intento = 0; intento < 5; intento++) {
+      const codigo = generarCodigoSala();
+      const salaRef = ref(fb.db, 'salas/' + codigo);
+      if ((await get(salaRef)).exists()) continue;
+      await set(salaRef, {
+        estado: 'jugando',           // ya están los dos → arranca directo
+        creadaEn: Date.now(),
+        turno: 'A',
+        jugadorA: nodoJugador(nombreA),
+        jugadorB: nodoJugador(nombreB),
+        resultado: null
+      });
+      onDisconnect(ref(fb.db, 'salas/' + codigo + '/jugadorA/conectado')).set(false);
+      sesion = { salaId: codigo, rol: 'A', unsub: null, heartbeatTimer: null };
+      return codigo;
+    }
+    throw new Error('no-se-pudo-generar-sala');
+  }
+
+  /**
+   * F3 — BUSCAR RIVAL automático. No bloqueante: avisa por callbacks.
+   * @param {string} nombre
+   * @param {{onEmparejado:Function, onTimeout:Function, onError:Function}} cbs
+   */
+  async function buscarRival(nombre, { onEmparejado, onTimeout, onError } = {}) {
+    if (!disponible && !init()) { onError && onError(new Error('online-no-disponible')); return; }
+    const { ref, runTransaction, onDisconnect, onValue, get, set, remove } = fb.DB;
+
+    const miUid = generarUidBusqueda();
+    const miFicha = { uid: miUid, nombre: String(nombre || 'Jugador').slice(0, 20), creadaEn: Date.now() };
+    const colaRef = ref(fb.db, 'cola/actual');
+    busqueda = { uid: miUid, timeoutId: null, unsubNotif: null };
+
+    // Decisión atómica: escribo mi ficha (esperar) o me llevo la del otro (emparejar).
+    let rivalTomado = null;
+    try {
+      const res = await runTransaction(colaRef, (slot) => {
+        const d = decidirMatchmaking(slot, miFicha);
+        if (d.accion === 'emparejar') { rivalTomado = d.rival; return null; }  // vacío el slot
+        return miFicha;                                                        // escribo mi ficha
+      });
+      if (!res.committed) throw new Error('cola-conflicto');
+    } catch (err) {
+      busqueda = null;
+      onError && onError(err);
+      return;
+    }
+
+    // CASO EMPAREJAR: creo la sala (yo A, el que esperaba B) y le aviso por notif.
+    if (rivalTomado) {
+      try {
+        const salaId = await crearSalaEmparejada(miFicha.nombre, rivalTomado.nombre);
+        await set(ref(fb.db, 'colaNotificaciones/' + rivalTomado.uid), { salaId, creadaEn: Date.now() });
+        busqueda = null;
+        onEmparejado && onEmparejado({ salaId, rol: 'A' });
+      } catch (err) {
+        busqueda = null;
+        onError && onError(err);
+      }
+      return;
+    }
+
+    // CASO ESPERAR: mi ficha quedó en la cola. Si me caigo, que se borre sola.
+    onDisconnect(colaRef).remove();
+
+    // Escucho mi buzón: el que me empareje va a dejar acá el salaId.
+    const notifRef = ref(fb.db, 'colaNotificaciones/' + miUid);
+    busqueda.unsubNotif = onValue(notifRef, async (snap) => {
+      const notif = snap.val();
+      if (!notif || !notif.salaId) return;
+      // Me emparejaron: limpio buzón + timeout, engancho la sala como jugadorB.
+      await remove(notifRef).catch(() => {});
+      if (busqueda) { clearTimeout(busqueda.timeoutId); if (busqueda.unsubNotif) busqueda.unsubNotif(); }
+      busqueda = null;
+      sesion = { salaId: notif.salaId, rol: 'B', unsub: null, heartbeatTimer: null };
+      onDisconnect(ref(fb.db, 'salas/' + notif.salaId + '/jugadorB/conectado')).set(false);
+      onEmparejado && onEmparejado({ salaId: notif.salaId, rol: 'B' });
+    });
+
+    // Timeout: si nadie llega, limpio mi ficha (solo si sigue siendo mía) y aviso.
+    busqueda.timeoutId = setTimeout(async () => {
+      await limpiarMiFichaCola(miUid);
+      if (busqueda && busqueda.unsubNotif) busqueda.unsubNotif();
+      busqueda = null;
+      onTimeout && onTimeout();
+    }, TIMEOUT_BUSQUEDA_S * 1000);
+  }
+
+  /** Borra mi ficha de /cola/actual SOLO si sigue siendo mía (slotEsMio). */
+  async function limpiarMiFichaCola(miUid) {
+    if (!disponible) return;
+    const { ref, get, remove } = fb.DB;
+    const colaRef = ref(fb.db, 'cola/actual');
+    try {
+      const slot = (await get(colaRef)).val();
+      if (slotEsMio(slot, miUid)) await remove(colaRef);
+    } catch (err) {
+      console.warn('OnlineService limpiarMiFichaCola:', err);
+    }
+  }
+
+  /** F3 — CANCELAR búsqueda en curso: corta listener + timeout + limpia cola. */
+  async function cancelarBusqueda() {
+    if (!busqueda) return;
+    const { uid, timeoutId, unsubNotif } = busqueda;
+    clearTimeout(timeoutId);
+    if (unsubNotif) unsubNotif();
+    busqueda = null;
+    await limpiarMiFichaCola(uid);
+  }
+
   /**
    * F3 — ESCUCHAR la sala en vivo. Cada cambio dispara el callback con el
    * estado YA proyectado (plano). Devuelve función para desuscribirse.
@@ -406,8 +537,8 @@ const OnlineService = (() => {
   return {
     // ciclo de vida
     init, estaDisponible, sesionActual,
-    // matchmaking (F2)
-    crearSala, unirseSala,
+    // matchmaking (F2 código de sala + F3 automático)
+    crearSala, unirseSala, buscarRival, cancelarBusqueda,
     // sincronización (F3)
     escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado,
     // robustez (F4)
