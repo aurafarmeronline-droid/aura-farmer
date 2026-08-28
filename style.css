@@ -442,6 +442,34 @@ body{
 }
 
 /* ============================================================
+   v0.11-web — EDITOR DE PERFIL / ONBOARDING (Entrega A)
+   ============================================================ */
+.perfil-editor.hidden{ display:none; }
+.perfil-editor__label{
+  display:block;
+  font-size:12px; color:var(--text-muted);
+  text-transform:uppercase; letter-spacing:0.5px;
+  margin-bottom:8px;
+}
+.perfil-editor__input{
+  width:100%; box-sizing:border-box;
+  padding:12px 14px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  color:var(--text);
+  font-family:var(--f-body); font-size:16px;
+}
+.perfil-editor__input:focus{
+  outline:none;
+  border-color:var(--aura);
+}
+.perfil-editor__error{
+  color:var(--lose); font-size:12px; margin-top:8px;
+}
+.perfil-editor__error.hidden{ display:none; }
+
+/* ============================================================
    v0.11-web — MATCHMAKING AUTOMÁTICO (F1 layout)
    ============================================================ */
 .mm-card-auto{

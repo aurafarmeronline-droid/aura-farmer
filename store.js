@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — store.js
+   v0.10-web — guardarNombre() con validación (trim/cap 20/no vacío) +
+     nombreEsDefault() para disparar onboarding la primera vez.
    v0.9-web — Store: persistencia de perfil + historial.
    Único módulo que toca localStorage. Si no está disponible
    (incógnito estricto, cuota llena, JSON corrupto), degrada a
@@ -99,6 +101,34 @@ const Store = (() => {
     return data;
   }
 
+  /**
+   * Valida y persiste el nombre del jugador. Reglas (ver casos borde A):
+   *   - trim de espacios; si queda vacío → se rechaza (devuelve el actual).
+   *   - cap a 20 caracteres (mismo límite que online.js/nodoJugador).
+   *   - nunca guarda vacío: si no había nombre previo válido, cae a 'Jugador'.
+   * NO toca puntajes/W-L-E: solo el nombre. PURA respecto de validación.
+   * @param {string} nombreNuevo
+   * @returns {string} el nombre final efectivamente aplicado
+   */
+  function guardarNombre(nombreNuevo) {
+    const data = cargar();
+    const limpio = String(nombreNuevo || '').trim().slice(0, 20);
+    if (limpio.length === 0) {
+      // Rechazo: mantengo el que había; si tampoco había, 'Jugador'.
+      const actual = (data.perfil.nombre || '').trim();
+      return actual || 'Jugador';
+    }
+    data.perfil.nombre = limpio;
+    guardar(data);
+    return limpio;
+  }
+
+  /** ¿El perfil todavía es el default de fábrica? (para disparar onboarding). */
+  function nombreEsDefault() {
+    const n = (cargar().perfil.nombre || '').trim();
+    return n === '' || n === 'Vos';
+  }
+
   function obtenerPerfil() {
     return cargar().perfil;
   }
@@ -107,7 +137,7 @@ const Store = (() => {
     return cargar().historial;
   }
 
-  return { cargar, guardarResultado, obtenerPerfil, obtenerHistorial };
+  return { cargar, guardarResultado, guardarNombre, nombreEsDefault, obtenerPerfil, obtenerHistorial };
 })();
 
 window.Store = Store;

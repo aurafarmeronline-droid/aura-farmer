@@ -106,7 +106,38 @@
       </div>
     </div>
 
-    <button class="btn btn--secondary btn--block mt-16">Editar perfil</button>
+    <button class="btn btn--secondary btn--block mt-16" id="btn-editar-perfil">Editar perfil</button>
+
+    <!-- Editor de nombre inline (oculto hasta tocar "Editar perfil") -->
+    <div class="card mt-16 perfil-editor hidden" id="perfil-editor">
+      <label class="perfil-editor__label" for="input-nombre">Tu nombre de aura</label>
+      <input id="input-nombre" type="text" maxlength="20" class="perfil-editor__input"
+             placeholder="¿Cómo te llamás?" autocomplete="off">
+      <p class="perfil-editor__error hidden" id="perfil-editor-error">Poné un nombre válido.</p>
+      <div class="row mt-8" style="gap:10px;">
+        <button class="btn btn--ghost" style="flex:1;" id="btn-cancelar-nombre">Cancelar</button>
+        <button class="btn btn--primary" style="flex:1;" id="btn-guardar-nombre">Guardar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ONBOARDING (primera vez: pedir nombre) ============ -->
+  <section id="screen-onboarding" class="screen hidden">
+    <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px;">
+      <div class="aura-ring">
+        <div class="avatar" style="width:100px;height:100px;font-size:32px;">AF</div>
+      </div>
+      <div style="text-align:center;">
+        <h1 class="screen__title" style="font-size:24px;">¿Cómo te llamás?</h1>
+        <p class="screen__subtitle" style="margin-bottom:0;">Así te van a conocer en los duelos</p>
+      </div>
+      <div style="width:100%;">
+        <input id="onboarding-input" type="text" maxlength="20" class="perfil-editor__input"
+               placeholder="Tu nombre" autocomplete="off" style="text-align:center; font-size:18px;">
+        <p class="perfil-editor__error hidden" id="onboarding-error">Poné un nombre válido.</p>
+        <button class="btn btn--primary btn--block btn--lg mt-16" id="btn-onboarding-listo">Empezar a farmear</button>
+      </div>
+    </div>
   </section>
 
   <!-- ============ MATCHMAKING ============ -->

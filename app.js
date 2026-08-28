@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — app.js
+   v0.9.8-web — Perfil editable (Entrega A): pantalla onboarding la primera
+     vez + botón "Editar perfil" funcional. Nombre real reemplaza el "Vos"
+     hardcodeado (lo ve el rival en el duelo). Valida vía Store.guardarNombre.
    v0.9.7-web — Fix enganche: mmEscucharSala usa rivalPresente (no
      rivalConectado) → la PC engancha sin esperar el heartbeat del rival.
    v0.9.6-web — Matchmaking automático completo (F4): mmBuscarAuto/
@@ -30,6 +33,7 @@
 
 // pantallas donde el bottom-nav NO se muestra (flujo de juego/transición)
 const SCREENS_SIN_NAV = new Set([
+  'screen-onboarding',
   'screen-matchmaking',
   'screen-traspaso',
   'screen-farmeo',
@@ -787,5 +791,60 @@ document.addEventListener('DOMContentLoaded', () => {
     OnlineService.salir().catch(() => {});
   });
 
-  showScreen('screen-inicio');
+  wirePerfil();
+
+  // Primera vez (perfil default) → onboarding; si no, al inicio normal.
+  if (Store.nombreEsDefault()) {
+    showScreen('screen-onboarding');
+  } else {
+    showScreen('screen-inicio');
+  }
 });
+
+/* ── Perfil editable (Entrega A) ─────────────────────────────
+   Onboarding y editor comparten la misma validación vía Store.guardarNombre,
+   que ya recorta/valida. Acá solo manejamos DOM y el mensaje de error. */
+function wirePerfil() {
+  // Onboarding (primera vez).
+  const obInput = document.getElementById('onboarding-input');
+  const obError = document.getElementById('onboarding-error');
+  const obListo = document.getElementById('btn-onboarding-listo');
+  if (obListo) {
+    const confirmar = () => {
+      const escrito = (obInput?.value || '').trim();
+      if (!escrito) { obError?.classList.remove('hidden'); return; }
+      Store.guardarNombre(escrito);
+      obError?.classList.add('hidden');
+      showScreen('screen-inicio');
+    };
+    obListo.addEventListener('click', confirmar);
+    obInput?.addEventListener('keydown', e => { if (e.key === 'Enter') confirmar(); });
+    obInput?.addEventListener('input', () => obError?.classList.add('hidden'));
+  }
+
+  // Editor desde Home.
+  const editor = document.getElementById('perfil-editor');
+  const inp    = document.getElementById('input-nombre');
+  const err    = document.getElementById('perfil-editor-error');
+  const abrir  = document.getElementById('btn-editar-perfil');
+  const guardar= document.getElementById('btn-guardar-nombre');
+  const cancel = document.getElementById('btn-cancelar-nombre');
+
+  abrir?.addEventListener('click', () => {
+    if (inp) inp.value = Store.obtenerPerfil().nombre || '';
+    err?.classList.add('hidden');
+    editor?.classList.remove('hidden');
+    inp?.focus();
+  });
+  cancel?.addEventListener('click', () => editor?.classList.add('hidden'));
+  const guardarNombre = () => {
+    const escrito = (inp?.value || '').trim();
+    if (!escrito) { err?.classList.remove('hidden'); return; }
+    Store.guardarNombre(escrito);
+    editor?.classList.add('hidden');
+    pintarHome();                 // refresca nombre/avatar en vivo
+  };
+  guardar?.addEventListener('click', guardarNombre);
+  inp?.addEventListener('keydown', e => { if (e.key === 'Enter') guardarNombre(); });
+  inp?.addEventListener('input', () => err?.classList.add('hidden'));
+}
