@@ -9,9 +9,7 @@
 </head>
 <body>
 
-<!-- ============ SPRITE DE ICONOS (línea, monocromáticos) ============
-     Se referencian con <svg class="ic"><use href="#ic-xxx"/></svg>.
-     Heredan color vía currentColor → un set, mil usos, cero deps. -->
+<!-- ============ SPRITE DE ICONOS (línea, monocromáticos) ============ -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="ic-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -242,7 +240,7 @@
   <!-- ============ FARMEO (cámara) ============ -->
   <section id="screen-farmeo" class="screen hidden">
     <h2 class="screen__title">Farmeo</h2>
-    <p class="screen__subtitle">Ronda 1 de 3 · Doble Bíceps</p>
+    <p class="screen__subtitle">Pose 1 de 3 · ...</p>
     <p class="encuadre-hint">📐 Encuadre: cara, torso y brazos · sentate a ~1m de la cámara</p>
 
     <div class="viewfinder">
@@ -259,9 +257,10 @@
     <div class="hud">
       <span id="hud-combo" class="badge badge--combo">Combo ×1.0</span>
       <span id="hud-score" class="stat stat--lg">0</span>
-      <span id="hud-proxima" class="badge">Próx: Rugido</span>
+      <span id="hud-proxima" class="badge">Próx: ...</span>
     </div>
 
+    <!-- Botón de terminar ronda (demo) ya no es necesario pero se mantiene -->
     <button class="btn btn--secondary btn--block mt-24" data-nav="screen-veredicto">Terminar ronda (demo)</button>
   </section>
 
@@ -310,7 +309,6 @@
   <section id="screen-ranking" class="screen hidden">
     <h2 class="screen__title">Ranking</h2>
     <p class="screen__subtitle">Top jugadores</p>
-
     <div class="card"></div>
   </section>
 
@@ -318,30 +316,7 @@
   <section id="screen-historial" class="screen hidden">
     <h2 class="screen__title">Historial</h2>
     <p class="screen__subtitle">Tus últimos duelos</p>
-
-    <div class="card">
-      <div class="list-row">
-        <div class="list-row__main">
-          <div class="list-row__title">vs Rival</div>
-          <div class="list-row__meta">hoy · 2-1</div>
-        </div>
-        <span class="badge badge--win">+25</span>
-      </div>
-      <div class="list-row">
-        <div class="list-row__main">
-          <div class="list-row__title">vs Lux</div>
-          <div class="list-row__meta">ayer · 0-2</div>
-        </div>
-        <span class="badge badge--lose">-10</span>
-      </div>
-      <div class="list-row">
-        <div class="list-row__main">
-          <div class="list-row__title">vs CPU</div>
-          <div class="list-row__meta">ayer · 2-2</div>
-        </div>
-        <span class="badge">+5</span>
-      </div>
-    </div>
+    <div class="card"></div>
   </section>
 
   <!-- ============ BOTTOM NAV ============ -->
@@ -367,13 +342,13 @@
 <script src="poses.js"></script>
 <script src="duelo.js"></script>
 <script src="score.js"></script>
+<script src="farmeo.js"></script>   <!-- ← NUEVO: motor principal -->
 <!-- Firebase SDK (CDN modular → expuesto en window.__FIREBASE__ para online.js/auth.js) -->
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
   import * as DB from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
   import * as AUTH from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
   window.__FIREBASE__ = { initializeApp, DB, AUTH };
-  // Avisamos a app.js que el SDK ya está listo.
   window.dispatchEvent(new Event('firebase-ready'));
 </script>
 <script src="online.js"></script>
