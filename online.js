@@ -73,13 +73,13 @@ const OnlineService = (() => {
      juego sigue funcionando 100% en modo local.
      ═══════════════════════════════════════════════════════════ */
   const FIREBASE_CONFIG = {
-    apiKey:            'AIzaSyBC0g-gQAWfSBlV2EnTWTH0tZfbULQh2XY',
-    authDomain:        'aura-farmer-fdc2e.firebaseapp.com',
-    databaseURL:       'https://aura-farmer-fdc2e-default-rtdb.firebaseio.com',
-    projectId:         'aura-farmer-fdc2e',
-    storageBucket:     'aura-farmer-fdc2e.firebasestorage.app',
-    messagingSenderId: '258803414780',
-    appId:             '1:258803414780:web:3807ac32c9b592b9fb0979'
+    apiKey:            'AIzaSyDg7uwrgypu6dYd1AVQaKs3NS66xBV9qSE',
+    authDomain:        'aura-farmer-bc36a.firebaseapp.com',
+    databaseURL:       'https://aura-farmer-bc36a-default-rtdb.firebaseio.com',
+    projectId:         'aura-farmer-bc36a',
+    storageBucket:     'aura-farmer-bc36a.firebasestorage.app',
+    messagingSenderId: '1059874986011',
+    appId:             '1:1059874986011:web:eb8d406f6adc13c30fc0be'
   };
 
   // Segundos sin heartbeat del rival tras los cuales lo damos por caído.
