@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — app.js
+   v0.9.7-web — Fix enganche: mmEscucharSala usa rivalPresente (no
+     rivalConectado) → la PC engancha sin esperar el heartbeat del rival.
    v0.9.6-web — Matchmaking automático completo (F4): mmBuscarAuto/
      mmCancelarBusqueda enganchan buscarRival() real; onEmparejado reusa el
      flujo escuchar-sala + heartbeat; timeout 20s vuelve al panel elegir.
@@ -672,7 +674,10 @@ function mmEscucharSala() {
   if (mmUnsubSala) { mmUnsubSala(); mmUnsubSala = null; }
   mmUnsubSala = OnlineService.escucharSala((est) => {
     if (!est.existe) return;
-    if (est.estado === 'jugando' && est.rivalConectado) {
+    // 'jugando' + ficha del rival presente = ambos en la sala → panel listo.
+    // Usamos rivalPresente (no rivalConectado) para no depender de que el
+    // heartbeat del rival ya haya latido; si no, la PC se queda sin enganchar.
+    if (est.estado === 'jugando' && est.rivalPresente) {
       const perfil = Store.obtenerPerfil();
       document.getElementById('mm-av-yo').textContent       = iniciales(perfil.nombre);
       document.getElementById('mm-nombre-yo').textContent   = perfil.nombre;

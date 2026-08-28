@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — online.js
+   v0.12.1-web — Fix emparejamiento auto: quitado onDisconnect sobre
+     'conectado' en el arranque (expulsaba en móvil por microcorte) +
+     rivalPresente (ficha existe, sin heartbeat) para que la PC enganche.
    v0.12-web — Matchmaking AUTOMÁTICO completo (F3): buscarRival() con
      transacción sobre /cola/actual, notificación vía /colaNotificaciones,
      crearSalaEmparejada(), cancelarBusqueda() y timeout de 20s. Reusa las
@@ -190,6 +193,11 @@ const OnlineService = (() => {
       miPuntaje: yo.puntajeTotal ?? 0,
       rivalNombre: rival.nombre || 'Rival',
       rivalPuntaje: rival.puntajeTotal ?? 0,
+      // rivalPresente: la ficha del rival EXISTE en la sala (sin mirar heartbeat).
+      // Sirve para enganchar al emparejar, cuando el rival todavía no re-latió.
+      rivalPresente: !!rival.nombre,
+      // rivalConectado: además de existir, su heartbeat está fresco. Sirve para
+      // detectar ABANDONO durante el duelo, no para el enganche inicial.
       rivalConectado: !!rival.conectado && !rivalCaido(rival.heartbeat, ahoraMs),
       resultado: sala.resultado || null
     };
@@ -336,7 +344,10 @@ const OnlineService = (() => {
         jugadorB: nodoJugador(nombreB),
         resultado: null
       });
-      onDisconnect(ref(fb.db, 'salas/' + codigo + '/jugadorA/conectado')).set(false);
+      // NO ponemos onDisconnect sobre 'conectado' acá: en móvil la conexión
+      // titila apenas carga y ese onDisconnect se dispara en el microcorte,
+      // expulsando al jugador antes de mostrar nada. Las caídas reales durante
+      // el duelo ya las detecta el heartbeat + TIMEOUT_RIVAL_S de la sala.
       sesion = { salaId: codigo, rol: 'A', unsub: null, heartbeatTimer: null };
       return codigo;
     }
@@ -399,7 +410,9 @@ const OnlineService = (() => {
       if (busqueda) { clearTimeout(busqueda.timeoutId); if (busqueda.unsubNotif) busqueda.unsubNotif(); }
       busqueda = null;
       sesion = { salaId: notif.salaId, rol: 'B', unsub: null, heartbeatTimer: null };
-      onDisconnect(ref(fb.db, 'salas/' + notif.salaId + '/jugadorB/conectado')).set(false);
+      // Igual que en rol A: sin onDisconnect sobre 'conectado' en el arranque
+      // (evita la auto-expulsión por microcorte en móvil). El heartbeat cubre
+      // las caídas reales una vez dentro del duelo.
       onEmparejado && onEmparejado({ salaId: notif.salaId, rol: 'B' });
     });
 
