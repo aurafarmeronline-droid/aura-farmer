@@ -108,6 +108,24 @@
 
     <button class="btn btn--secondary btn--block mt-16" id="btn-editar-perfil">Editar perfil</button>
 
+    <!-- Sesión Google (Entrega B): un solo botón que cambia según estado -->
+    <div class="card mt-16" id="auth-card">
+      <div id="auth-desconectado">
+        <p style="font-size:12px; color:var(--text-muted); margin:0 0 10px;">
+          Iniciá sesión para que tu perfil te siga a cualquier dispositivo.
+        </p>
+        <button class="btn btn--secondary btn--block" id="btn-google-login">
+          <svg class="ic" viewBox="0 0 24 24"><path fill="currentColor" d="M21.35 11.1h-9.17v2.73h5.24c-.23 1.5-1.6 4.38-5.24 4.38-3.15 0-5.72-2.61-5.72-5.83s2.57-5.83 5.72-5.83c1.79 0 2.99.76 3.68 1.42l2.5-2.42C16.9 3.9 14.79 3 12.18 3 6.98 3 2.77 7.2 2.77 12.38S6.98 21.76 12.18 21.76c6.03 0 10.4-4.24 10.4-10.2 0-.68-.07-1.2-.16-1.73z"/></svg>
+          Entrar con Google
+        </button>
+      </div>
+      <div id="auth-conectado" class="hidden" style="text-align:center;">
+        <p style="font-size:12px; color:var(--text-muted); margin:0 0 4px;">Conectado como</p>
+        <p style="font-size:13px; font-weight:600; margin:0 0 12px;" id="auth-email"></p>
+        <button class="btn btn--ghost btn--block" id="btn-google-logout">Cerrar sesión</button>
+      </div>
+    </div>
+
     <!-- Editor de nombre inline (oculto hasta tocar "Editar perfil") -->
     <div class="card mt-16 perfil-editor hidden" id="perfil-editor">
       <label class="perfil-editor__label" for="input-nombre">Tu nombre de aura</label>
@@ -349,15 +367,17 @@
 <script src="poses.js"></script>
 <script src="duelo.js"></script>
 <script src="score.js"></script>
-<!-- Firebase SDK (CDN modular → expuesto en window.__FIREBASE__ para online.js) -->
+<!-- Firebase SDK (CDN modular → expuesto en window.__FIREBASE__ para online.js/auth.js) -->
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
   import * as DB from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
-  window.__FIREBASE__ = { initializeApp, DB };
+  import * as AUTH from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+  window.__FIREBASE__ = { initializeApp, DB, AUTH };
   // Avisamos a app.js que el SDK ya está listo.
   window.dispatchEvent(new Event('firebase-ready'));
 </script>
 <script src="online.js"></script>
+<script src="auth.js"></script>
 <script type="module" src="vision.js"></script>
 <script src="app.js"></script>
 </body>

@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — store.js
+   v0.11-web — reemplazarPerfil() y exportarTodo() para sincronizar con
+     Google (Entrega B): la nube pisa lo local, o lo local sube de semilla.
    v0.10-web — guardarNombre() con validación (trim/cap 20/no vacío) +
      nombreEsDefault() para disparar onboarding la primera vez.
    v0.9-web — Store: persistencia de perfil + historial.
@@ -137,7 +139,38 @@ const Store = (() => {
     return cargar().historial;
   }
 
-  return { cargar, guardarResultado, guardarNombre, nombreEsDefault, obtenerPerfil, obtenerHistorial };
+  /**
+   * Sobrescribe TODO el local (perfil + historial) con lo que venga de la
+   * nube. Usada por auth.js cuando "Google manda" (regla de conflicto B).
+   * Valida forma mínima para no aceptar basura y romper el juego.
+   * @param {{perfil:Object, historial:Array}} data
+   * @returns {boolean} true si se aplicó
+   */
+  function reemplazarPerfil(data) {
+    if (!data || !data.perfil || typeof data.perfil.nombre !== 'string') return false;
+    const limpio = {
+      perfil: {
+        nombre:       String(data.perfil.nombre || 'Jugador').trim().slice(0, 20) || 'Jugador',
+        puntajeTotal: Number(data.perfil.puntajeTotal) || 0,
+        victorias:    Number(data.perfil.victorias) || 0,
+        derrotas:     Number(data.perfil.derrotas) || 0,
+        empates:      Number(data.perfil.empates) || 0
+      },
+      historial: Array.isArray(data.historial) ? data.historial.slice(0, HISTORIAL_MAX) : []
+    };
+    guardar(limpio);
+    return true;
+  }
+
+  /** Todo el estado local tal cual, para subirlo a la nube (semilla de cuenta nueva). */
+  function exportarTodo() {
+    return cargar();
+  }
+
+  return {
+    cargar, guardarResultado, guardarNombre, nombreEsDefault, obtenerPerfil, obtenerHistorial,
+    reemplazarPerfil, exportarTodo
+  };
 })();
 
 window.Store = Store;

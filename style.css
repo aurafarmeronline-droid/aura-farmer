@@ -442,6 +442,12 @@ body{
 }
 
 /* ============================================================
+   v0.12-web — LOGIN GOOGLE (Entrega B)
+   ============================================================ */
+#auth-conectado.hidden, #auth-desconectado.hidden{ display:none; }
+#btn-google-login .ic{ width:18px; height:18px; }
+
+/* ============================================================
    v0.11-web — EDITOR DE PERFIL / ONBOARDING (Entrega A)
    ============================================================ */
 .perfil-editor.hidden{ display:none; }

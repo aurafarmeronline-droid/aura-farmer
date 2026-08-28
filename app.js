@@ -1,5 +1,9 @@
 /* ============================================================
    AURA FARMER — app.js
+   v0.9.9-web — Login con Google completo (Entrega B): wireAuth() engancha
+     AuthService (init + onCambioSesion + login/logout), sincroniza perfil
+     al loguear (regla: la nube manda) y sube resultado tras cada duelo si
+     hay sesión.
    v0.9.8-web — Perfil editable (Entrega A): pantalla onboarding la primera
      vez + botón "Editar perfil" funcional. Nombre real reemplaza el "Vos"
      hardcodeado (lo ve el rival en el duelo). Valida vía Store.guardarNombre.
@@ -390,7 +394,11 @@ function pintarVeredicto() {
   const jA = dueloState.jugadores.A, jB = dueloState.jugadores.B;
 
   // Persistencia (D): guardamos el resultado antes de limpiar dueloState.
-  Store.guardarResultado(r, jB.nombre);
+  const dataFinal = Store.guardarResultado(r, jB.nombre);
+  // Si hay sesión Google, subimos el estado actualizado a la nube (Entrega B).
+  if (window.AuthService && AuthService.estaLogueado()) {
+    AuthService.subirPerfil(dataFinal).catch(() => {});
+  }
 
   const sub = document.querySelector('#screen-veredicto .screen__subtitle');
   if (sub) sub.textContent = `${jA.nombre} ${r.puntajeA} — ${r.puntajeB} ${jB.nombre}`;
@@ -792,6 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   wirePerfil();
+  wireAuth();
 
   // Primera vez (perfil default) → onboarding; si no, al inicio normal.
   if (Store.nombreEsDefault()) {
@@ -847,4 +856,62 @@ function wirePerfil() {
   guardar?.addEventListener('click', guardarNombre);
   inp?.addEventListener('keydown', e => { if (e.key === 'Enter') guardarNombre(); });
   inp?.addEventListener('input', () => err?.classList.add('hidden'));
+}
+
+/* ── Login con Google (Entrega B) ─────────────────────────────
+   AuthService inicializa cuando el SDK esté listo (igual patrón que
+   OnlineService). onCambioSesion pinta el estado; el login dispara
+   sincronizarPerfil (regla: la nube manda si ya existía) y refresca Home. */
+function wireAuth() {
+  const desconectado = document.getElementById('auth-desconectado');
+  const conectado     = document.getElementById('auth-conectado');
+  const emailEl       = document.getElementById('auth-email');
+  const btnLogin       = document.getElementById('btn-google-login');
+  const btnLogout      = document.getElementById('btn-google-logout');
+
+  const pintarSesion = (usuario) => {
+    if (!desconectado || !conectado) return;
+    if (usuario) {
+      desconectado.classList.add('hidden');
+      conectado.classList.remove('hidden');
+      if (emailEl) emailEl.textContent = usuario.email || usuario.nombre;
+    } else {
+      desconectado.classList.remove('hidden');
+      conectado.classList.add('hidden');
+    }
+  };
+
+  const arrancarAuth = () => {
+    if (!AuthService.estaDisponible()) AuthService.init();
+    AuthService.onCambioSesion(pintarSesion);
+  };
+  if (window.__FIREBASE__) arrancarAuth();
+  else window.addEventListener('firebase-ready', arrancarAuth, { once: true });
+
+  btnLogin?.addEventListener('click', async () => {
+    btnLogin.disabled = true;
+    try {
+      await AuthService.iniciarSesionGoogle();
+      // Sincronizamos: la nube manda si ya había perfil para esta cuenta;
+      // si no, sube el local actual como semilla (Entrega B, caso borde 3/4).
+      const perfilFinal = await AuthService.sincronizarPerfil(Store.exportarTodo());
+      Store.reemplazarPerfil(perfilFinal);
+      pintarHome();
+    } catch (err) {
+      // Popup cerrado/bloqueado (caso borde 1): no es un error real, solo avisamos.
+      const codigo = err && err.code;
+      if (codigo !== 'auth/popup-closed-by-user' && codigo !== 'auth/cancelled-popup-request') {
+        console.error('wireAuth login:', err);
+        alert('No se pudo iniciar sesión con Google. Probá de nuevo.');
+      }
+    } finally {
+      btnLogin.disabled = false;
+    }
+  });
+
+  btnLogout?.addEventListener('click', async () => {
+    await AuthService.cerrarSesion();
+    // Se conserva el último estado local (caso borde 5): no se borra nada,
+    // el juego sigue en modo local con lo que ya había.
+  });
 }
