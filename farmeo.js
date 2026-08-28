@@ -3,8 +3,20 @@
  * ----------------------------------------------------------------------------
  * We Do — dtp & ele · Aura Farmer Web
  *
- * CHANGELOG
- *   v1.1-web (Fase 2+3) — Motor funcional (beta).
+ * CHANGELOG (versión del MOTOR de farmeo de aura)
+ *   v1.2.0-web — CAPA DE PULIDO (reglas sacadas de batallas reales con
+ *                       jurado). Tres bonus/penalización que se aplican al
+ *                       cerrar paso / terminar coreo, encima de la fórmula
+ *                       por-frame (no la reemplazan):
+ *                       · FLUIDEZ    — premia transiciones suaves (menos
+ *                                      saltos bruscos de aura entre frames).
+ *                       · VARIEDAD   — penaliza repetir la misma pose que el
+ *                                      paso anterior ("muy repetitivo").
+ *                       · INTENSIDAD — premia escalar: empezar tranqui y
+ *                                      cerrar fuerte ("tirá la ulti al final").
+ *   v1.1.1-web — Fix escala de puntaje (×1000, ahora en cientos/miles) +
+ *                       campo emoji por pose.
+ *   v1.1.0-web — Fase 2+3 funcional (beta):
  *                       · Fase 2: cálculo de ángulos + evaluación de pose
  *                         (cuerpo) y confianza facial.
  *                       · Fase 3: secuencia con timing, sostenimiento por
@@ -12,8 +24,7 @@
  *                         (romper el personaje resta aura).
  *                       ⚠️ Ángulos ideales estimados del video, NO calibrados
  *                         con webcam real todavía. Beta jugable, no final.
- *   v0.1-web (Fase 1) — Estructura base + catálogo de poses Tier 1 (torso-up).
- *                       Solo datos y esqueleto de funciones.
+ *   v1.0.0-web (Fase 1) — Estructura base + catálogo de poses Tier 1.
  *
  * FILOSOFÍA DE PUNTAJE (de las transcripciones de referencia):
  *   "Gana quien mantenga compostura robótica." El aura NO es solo acertar la
@@ -125,6 +136,7 @@ const POSES = {
   maywin: {
     id: 'maywin',
     nombre: 'Maywin (silencio)',
+    emoji: '🤫',
     tier: 1,
     detectable: true,
     espejo_ok: true,
@@ -141,6 +153,7 @@ const POSES = {
   zorro_guapo: {
     id: 'zorro_guapo',
     nombre: 'Zorro Guapo de Sutopía',
+    emoji: '👉',
     tier: 1,
     detectable: true,
     espejo_ok: true,
@@ -156,6 +169,7 @@ const POSES = {
   six: {
     id: 'six',
     nombre: 'Six / 6-7',
+    emoji: '🙌',
     tier: 1,
     detectable: true,
     espejo_ok: true,
@@ -173,6 +187,7 @@ const POSES = {
   db: {
     id: 'db',
     nombre: 'DB (Doble Bíceps)',
+    emoji: '💪',
     tier: 1,
     detectable: true,
     espejo_ok: true,
@@ -190,6 +205,7 @@ const POSES = {
   npc_lloron: {
     id: 'npc_lloron',
     nombre: 'NPC Llorón',
+    emoji: '😭',
     tier: 1,
     detectable: true,
     espejo_ok: true,
@@ -205,6 +221,7 @@ const POSES = {
   codo_x3: {
     id: 'codo_x3',
     nombre: 'Codo x3',
+    emoji: '🫷',
     tier: 1,
     detectable: true,
     espejo_ok: true,
@@ -220,6 +237,7 @@ const POSES = {
   db67: {
     id: 'db67',
     nombre: 'DB 67',
+    emoji: '🔥',
     tier: 1,
     detectable: true,
     espejo_ok: true,
@@ -467,6 +485,31 @@ function factorCompostura(blendshapes) {
 }
 
 /* ----------------------------------------------------------------------------
+ * ESCALA_PUNTOS — Multiplicador para llevar el aura (0..~1.15 por paso) a la
+ * escala visible del juego (cientos/miles, como el motor viejo score.js).
+ * Un paso PERFECT sostenido ≈ 1.0 → 1000 pts. Coreo de 4 pasos ≈ 4000 máx.
+ * -------------------------------------------------------------------------- */
+const ESCALA_PUNTOS = 1000;
+
+/* ----------------------------------------------------------------------------
+ * PULIDO — Parámetros de las 3 reglas sacadas de batallas reales con jurado.
+ * ----------------------------------------------------------------------------
+ * Todos son multiplicadores suaves sobre el puntaje ya calculado, para que
+ * nunca den vuelta el resultado (una pose bien hecha siempre gana): topes
+ * chicos. Se pueden apagar poniendo el bonus/pena en 0.
+ * -------------------------------------------------------------------------- */
+const PULIDO = {
+  // FLUIDEZ: qué tan suave fue la transición dentro del paso. Se mide como
+  // 1 − volatilidad del aura entre frames consecutivos. Suave = bonus.
+  fluidez:   { bonus_max: 0.12 },   // hasta +12% si el paso fue muy fluido
+  // VARIEDAD: repetir la misma pose que el paso anterior penaliza.
+  variedad:  { pena_repeticion: 0.15 }, // −15% si el paso repite al anterior
+  // INTENSIDAD: escalar a lo largo de la coreo (segunda mitad > primera mitad)
+  // premia el cierre. Se aplica UNA vez, al terminar la coreo, sobre el total.
+  intensidad:{ bonus_max: 0.10 },   // hasta +10% al total si la coreo escaló
+};
+
+/* ----------------------------------------------------------------------------
  * evaluarPose — Fase 2 completa: puntaje instantáneo de un frame vs una pose.
  * ----------------------------------------------------------------------------
  * aura = precisión_cuerpo × confianza_facial × factor_compostura
@@ -561,7 +604,7 @@ function tick(estado, coreo, landmarks, blendshapes, ahora_ms) {
     auraInstante: +ev.aura.toFixed(3),
     pasoCerrado,
     coreoTerminada,
-    puntajeTotal: +estado.puntajeTotal.toFixed(3),
+    puntajeTotal: Math.round(estado.puntajeTotal),
   };
 }
 
@@ -583,13 +626,80 @@ function promedioPonderado(buffer) {
  * Función aparte (Single Responsibility): tick decide CUÁNDO cerrar; esto
  * hace el cierre. Resetea el buffer y el reloj para el próximo paso.
  * -------------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------------
+ * FLUIDEZ (pulido) — Bonus por transición suave dentro del paso.
+ * ----------------------------------------------------------------------------
+ * Mide la volatilidad del aura entre frames consecutivos del buffer. Poca
+ * volatilidad = el jugador entró y sostuvo suave = fluido = bonus. Muchos
+ * saltos bruscos = 0 bonus. Devuelve un multiplicador 1..(1+bonus_max).
+ * -------------------------------------------------------------------------- */
+function calcularFluidez(buffer) {
+  if (!buffer || buffer.length < 3) return 1.0; // muy pocos frames: neutro
+  let saltos = 0;
+  for (let i = 1; i < buffer.length; i++) {
+    saltos += Math.abs(buffer[i].aura - buffer[i - 1].aura);
+  }
+  const volatilidadMedia = saltos / (buffer.length - 1); // 0..~1
+  // Menos volatilidad → más bonus. Saturamos: volatilidad ≥0.3 = sin bonus.
+  const suavidad = Math.max(0, 1 - volatilidadMedia / 0.3);
+  return 1 + PULIDO.fluidez.bonus_max * suavidad;
+}
+
+/* ----------------------------------------------------------------------------
+ * VARIEDAD (pulido) — Penaliza repetir la misma pose que el paso anterior.
+ * ----------------------------------------------------------------------------
+ * Los jurados penalizan lo repetitivo. Devuelve multiplicador 1 o (1−pena).
+ * -------------------------------------------------------------------------- */
+function calcularVariedad(coreo, indicePaso) {
+  if (indicePaso === 0) return 1.0; // el primer paso nunca repite
+  const actual = coreo.pasos[indicePaso].poseId;
+  const previo = coreo.pasos[indicePaso - 1].poseId;
+  return actual === previo ? (1 - PULIDO.variedad.pena_repeticion) : 1.0;
+}
+
+/* ----------------------------------------------------------------------------
+ * INTENSIDAD (pulido) — Bonus final por escalar a lo largo de la coreo.
+ * ----------------------------------------------------------------------------
+ * "Empezá tranqui, tirá la ulti al final." Compara el promedio de puntaje de
+ * la segunda mitad de los pasos vs la primera mitad. Si la segunda es mayor,
+ * la coreo escaló → bonus. Se aplica UNA vez al terminar, sobre el total.
+ * Devuelve multiplicador 1..(1+bonus_max).
+ * -------------------------------------------------------------------------- */
+function calcularIntensidad(puntajePorPaso) {
+  const n = puntajePorPaso.length;
+  if (n < 2) return 1.0;
+  const mitad = Math.floor(n / 2);
+  const prom = (arr) => arr.reduce((s, p) => s + p.puntaje, 0) / (arr.length || 1);
+  const primera = prom(puntajePorPaso.slice(0, mitad));
+  const segunda = prom(puntajePorPaso.slice(mitad));
+  if (primera <= 0) return 1.0;
+  // Cuánto creció la segunda mitad respecto de la primera (saturado en +50%).
+  const crecimiento = Math.max(0, Math.min(1, (segunda - primera) / (primera * 0.5)));
+  return 1 + PULIDO.intensidad.bonus_max * crecimiento;
+}
+
+/* ----------------------------------------------------------------------------
+ * cerrarPaso — Cierra el paso actual, guarda su puntaje y avanza al siguiente.
+ * ----------------------------------------------------------------------------
+ * Función aparte (Single Responsibility): tick decide CUÁNDO cerrar; esto
+ * hace el cierre. Aplica el pulido POR-PASO (fluidez + variedad) antes de
+ * escalar. Resetea el buffer y el reloj para el próximo paso.
+ * -------------------------------------------------------------------------- */
 function cerrarPaso(estado, coreo, puntaje, ahora_ms, meta) {
+  // Pulido por-paso: fluidez (del buffer) × variedad (vs paso anterior).
+  const fFluidez  = meta.saltado ? 1.0 : calcularFluidez(estado.buffer);
+  const fVariedad = calcularVariedad(coreo, estado.pasoActual);
+  const puntajeConPulido = puntaje * fFluidez * fVariedad;
+  const puntajeEscalado = puntajeConPulido * ESCALA_PUNTOS;
+
   estado.puntajePorPaso.push({
     poseId: coreo.pasos[estado.pasoActual].poseId,
-    puntaje: +puntaje.toFixed(3),
+    puntaje: Math.round(puntajeEscalado),
     saltado: !!meta.saltado,
+    fluidez: +fFluidez.toFixed(2),
+    variedad: +fVariedad.toFixed(2),
   });
-  estado.puntajeTotal += puntaje;
+  estado.puntajeTotal += puntajeEscalado;
 
   // Avanzar
   estado.pasoActual++;
@@ -599,6 +709,13 @@ function cerrarPaso(estado, coreo, puntaje, ahora_ms, meta) {
 
   const terminada = estado.pasoActual >= coreo.pasos.length;
   estado.fase = terminada ? 'fin' : 'transicion';
+
+  // Pulido de cierre: al terminar, bonus de INTENSIDAD sobre el total.
+  if (terminada) {
+    const fIntensidad = calcularIntensidad(estado.puntajePorPaso);
+    estado.puntajeTotal *= fIntensidad;
+    estado.bonusIntensidad = +fIntensidad.toFixed(2); // para feedback/tests
+  }
 
   return { coreoTerminada: terminada };
 }
@@ -610,13 +727,15 @@ function cerrarPaso(estado, coreo, puntaje, ahora_ms, meta) {
  * headless) usa module.exports. Así se valida la lógica sin navegador.
  * -------------------------------------------------------------------------- */
 const Farmeo = {
-  ARTIC, COMPOSTURA, POSES, COREOS,
+  ARTIC, COMPOSTURA, POSES, COREOS, PULIDO,
   fabricarEstado,
   // Fase 2
   anguloEntre, puntajePorTolerancia, precisionCuerpo,
   confianzaFacial, factorCompostura, evaluarPose,
   // Fase 3
   tick, promedioPonderado, cerrarPaso,
+  // Pulido (v1.2.0)
+  calcularFluidez, calcularVariedad, calcularIntensidad,
 };
 
 if (typeof module !== 'undefined' && module.exports) {
