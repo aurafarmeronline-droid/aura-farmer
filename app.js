@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — app.js
+   v0.9.5-web — Matchmaking automático (F1 layout): botón "Buscar rival" +
+     panel de búsqueda con spinner/cancelar. Handlers stub (lógica real F3/F4).
    v0.9.4-web — Auditoría bandas/timer: cartelito con histéresis+cooldown
      (antes redisparaba en cada cruce de banda por ruido de landmarks);
      KEYFRAME_INTERVALO_S 3→10s (ronda de 3 poses pasa de 9s a 30s reales).
@@ -620,7 +622,7 @@ let mmUnsubSala = null;
 let mmSalaId    = null;
 
 function mmMostrarPanel(nombre) {
-  ['mm-panel-elegir', 'mm-panel-espera', 'mm-panel-listo'].forEach(id => {
+  ['mm-panel-elegir', 'mm-panel-buscando', 'mm-panel-espera', 'mm-panel-listo'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = (id === nombre) ? 'flex' : 'none';
   });
@@ -631,6 +633,17 @@ function mmError(msg) {
   if (!el) return;
   el.textContent = msg;
   el.style.display = msg ? 'block' : 'none';
+}
+
+/* Matchmaking automático — F1: solo transición de panel. La lógica real
+   (transacción de cola, timeout 20s, emparejado) llega en F3/F4. */
+function mmBuscarAuto() {
+  mmMostrarPanel('mm-panel-buscando');
+  // TODO F4: OnlineService.buscarRival(perfil.nombre, {onEmparejado, onTimeout, onError})
+}
+function mmCancelarBusqueda() {
+  // TODO F4: OnlineService.cancelarBusqueda()
+  mmMostrarPanel('mm-panel-elegir');
 }
 
 function mmEscucharSala() {
@@ -722,6 +735,8 @@ function iniciarMatchmaking() {
     el.replaceWith(clone);
     clone.addEventListener('click', fn);
   };
+  reBind('mm-btn-auto',           mmBuscarAuto);
+  reBind('mm-btn-cancelar-buscar',mmCancelarBusqueda);
   reBind('mm-btn-crear',          mmCrear);
   reBind('mm-btn-unirse',         mmUnirse);
   reBind('mm-btn-cancelar-espera',() => { limpiarMatchmaking(); showScreen('screen-inicio'); });

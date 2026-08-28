@@ -114,11 +114,16 @@
     <h2 class="screen__title">Matchmaking</h2>
     <p class="screen__subtitle" id="mm-subtitulo">Jugá online con un amigo.</p>
 
-    <!-- Panel A: elegir modo (crear / unirse) -->
+    <!-- Panel A: elegir modo (auto / crear / unirse) -->
     <div id="mm-panel-elegir" style="display:flex; flex-direction:column; gap:12px;">
+      <div class="card mm-card-auto" style="text-align:center;">
+        <p style="font-size:13px; color:var(--text-muted); margin:0 0 12px;">Te buscamos un rival al toque, sin códigos.</p>
+        <button class="btn btn--primary btn--block btn--lg" id="mm-btn-auto"><svg class="ic"><use href="#ic-bolt"/></svg> Buscar rival</button>
+      </div>
+      <div class="mm-sep"><span>o con código</span></div>
       <div class="card" style="text-align:center;">
-        <p style="font-size:13px; color:var(--text-secondary); margin:0 0 12px;">Creás una sala y le pasás el código a tu rival.</p>
-        <button class="btn btn--primary btn--block" id="mm-btn-crear">Crear sala</button>
+        <p style="font-size:13px; color:var(--text-muted); margin:0 0 12px;">Creás una sala y le pasás el código a tu rival.</p>
+        <button class="btn btn--secondary btn--block" id="mm-btn-crear">Crear sala</button>
       </div>
       <div class="card" style="text-align:center;">
         <p style="font-size:13px; color:var(--text-secondary); margin:0 0 12px;">Tu rival ya creó la sala y te pasó el código.</p>
@@ -129,6 +134,16 @@
         <button class="btn btn--secondary btn--block" id="mm-btn-unirse">Unirse a sala</button>
       </div>
       <button class="btn btn--ghost btn--block" data-nav="screen-inicio">Cancelar</button>
+    </div>
+
+    <!-- Panel Auto: buscando rival automático -->
+    <div id="mm-panel-buscando" style="display:none; flex-direction:column; align-items:center; gap:20px;">
+      <div class="aura-ring"><div class="avatar" style="width:80px;height:80px;">?</div></div>
+      <div style="text-align:center;">
+        <p class="mm-buscando-txt" id="mm-buscando-txt">Buscando rival...</p>
+        <p style="font-size:12px; color:var(--text-muted); margin-top:6px;">Emparejando con alguien que también esté buscando</p>
+      </div>
+      <button class="btn btn--danger" id="mm-btn-cancelar-buscar">Cancelar búsqueda</button>
     </div>
 
     <!-- Panel B: esperando rival (creador) -->

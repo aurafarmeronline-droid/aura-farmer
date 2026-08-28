@@ -442,6 +442,27 @@ body{
 }
 
 /* ============================================================
+   v0.11-web — MATCHMAKING AUTOMÁTICO (F1 layout)
+   ============================================================ */
+.mm-card-auto{
+  border-color:var(--aura-dim);
+  background:linear-gradient(180deg, var(--surface) 0%, #191426 100%);
+}
+.mm-sep{
+  display:flex; align-items:center; gap:10px;
+  color:var(--text-muted);
+  font-size:11px; text-transform:uppercase; letter-spacing:1px;
+}
+.mm-sep::before, .mm-sep::after{
+  content:''; flex:1; height:1px; background:var(--border);
+}
+.mm-buscando-txt{
+  font-family:var(--f-display);
+  font-weight:700; font-size:18px;
+  color:var(--aura-glow);
+}
+
+/* ============================================================
    v0.11-web — PERFIL REDISEÑADO (T2) + CARTELITOS COMBATE (T3)
    ============================================================ */
 

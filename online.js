@@ -1,5 +1,9 @@
 /* ============================================================
    AURA FARMER — online.js
+   v0.11-web — Matchmaking AUTOMÁTICO (F2 lógica pura): slot mutex
+     /cola/actual + decidirMatchmaking()/slotEsMio()/generarUidBusqueda().
+     Convive con el matchmaking por código de sala (no lo reemplaza).
+     Capa Firebase (F3) e integración app.js (F4) pendientes.
    v0.10-web — OnlineService: multiplayer 1v1 vía Firebase Realtime DB.
    Único módulo que toca Firebase (igual que store.js con localStorage).
    Todo lo demás lo ignora: app.js solo ve datos planos por callback.
@@ -125,6 +129,43 @@ const OnlineService = (() => {
   function rivalCaido(heartbeatRival, ahoraMs, timeoutS = TIMEOUT_RIVAL_S) {
     if (!heartbeatRival) return false;   // todavía no latió nunca: no lo matamos
     return (ahoraMs - heartbeatRival) > timeoutS * 1000;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     MATCHMAKING AUTOMÁTICO (v0.11-web) — LÓGICA PURA.
+     Modelo: un único slot mutex /cola/actual. El que lo encuentra vacío
+     escribe su ficha y ESPERA; el que lo encuentra ocupado lo VACÍA y
+     EMPAREJA. La atomicidad la garantiza la transacción de Firebase (F3);
+     acá abajo va solo la decisión pura, sin red, para poder testearla.
+     ───────────────────────────────────────────────────────────── */
+
+  const TIMEOUT_BUSQUEDA_S = 20;   // sin rival en este tiempo → onTimeout y limpieza
+
+  /**
+   * uid efímero por búsqueda. NO usamos el nombre como clave: dos jugadores
+   * pueden llamarse igual y colisionarían en la cola.
+   */
+  function generarUidBusqueda(rng = Math.random) {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'uid-' + Math.floor(rng() * 1e9).toString(36) + Date.now().toString(36);
+  }
+
+  /**
+   * DECISIÓN CENTRAL del matchmaking, PURA. Dado el slot actual y mi ficha:
+   *   - slot vacío           → 'esperar'   (escribo mi ficha)
+   *   - slot con OTRO         → 'emparejar' (lo saco y creo sala)
+   *   - slot con MI ficha     → 'esperar'   (no me emparejo solo)
+   * @returns {{accion:'esperar'|'emparejar', rival:Object|null}}
+   */
+  function decidirMatchmaking(slot, miFicha) {
+    if (!slot || !slot.uid) return { accion: 'esperar', rival: null };
+    if (slot.uid === miFicha.uid) return { accion: 'esperar', rival: null };
+    return { accion: 'emparejar', rival: slot };
+  }
+
+  /** ¿La ficha del slot sigue siendo MÍA? (para limpiar sin borrar a otro). PURA. */
+  function slotEsMio(slot, miUid) {
+    return !!slot && slot.uid === miUid;
   }
 
   /**
@@ -374,7 +415,8 @@ const OnlineService = (() => {
     // puras (export para tests / reuso)
     _puras: {
       configEsPlaceholder, generarCodigoSala, normalizarCodigo,
-      codigoValido, rolRival, rivalCaido, proyectarEstado
+      codigoValido, rolRival, rivalCaido, proyectarEstado,
+      generarUidBusqueda, decidirMatchmaking, slotEsMio
     }
   };
 })();
