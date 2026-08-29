@@ -1,5 +1,16 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v1.5.1-web — MULTIPLAYER SINCRONIZADO (turnos estilo Yu-Gi-Oh):
+     · Firebase es la fuente de verdad del turno. Los dos dispositivos
+       escuchan la sala y ven LA MISMA partida (antes cada uno corría su
+       duelo local en paralelo → por eso se desincronizaban).
+     · Juega uno por vez: si es tu turno jugás; si es del rival, ves la
+       pantalla de espera (screen-espera) con su puntaje subiendo en vivo.
+     · terminarRonda online → enviarPuntaje()+pasarTurno() o cerrarConResultado()
+       en lugar de tocar solo la copia local.
+     · Veredicto desde MI perspectiva real (rol A o B), no asumiendo A.
+     Requiere en index.html: una pantalla id="screen-espera" con los ids
+     espera-rival-nombre / espera-rival-puntaje / espera-rival-pose.
    v1.2.2-web — MEGA UPDATE VISUAL de la pantalla de farmeo:
      · HUD nuevo: panel VS (dos fichas + marcador + barra), medidor
        vertical de aura, barra de ronda con dots y dos relojes.
@@ -21,6 +32,7 @@ const SCREENS_SIN_NAV = new Set([
   'screen-onboarding',
   'screen-matchmaking',
   'screen-traspaso',
+  'screen-espera',
   'screen-veredicto'
 ]);
 
@@ -39,7 +51,10 @@ let currentScreen = null;
 function showScreen(id) {
   // Guarda: salir del farmeo con una ronda a medias pierde el puntaje.
   // Pedimos confirmación una sola vez, y solo si realmente se está jugando.
-  if (currentScreen === 'screen-farmeo' && id !== 'screen-farmeo' && rondaActiva) {
+  // v1.5.1 — excepción: ir a la pantalla de espera en un duelo online es parte
+  // normal del flujo de turnos, no un abandono → no pedir confirmación.
+  if (currentScreen === 'screen-farmeo' && id !== 'screen-farmeo' && rondaActiva &&
+      !(dueloEsOnline && id === 'screen-espera')) {
     const salir = window.confirm('Estás en medio de una ronda. ¿Salir y perder el puntaje?');
     if (!salir) return;
   }
@@ -63,6 +78,11 @@ function showScreen(id) {
 
 /* ---- Estado del duelo ---- */
 let dueloState = null;
+let dueloEsOnline = false;      // v1.5.1 — true si el duelo actual es multiplayer sincronizado
+let miRolOnline = null;         // 'A' o 'B' — mi rol en el duelo online
+let dueloUnsub = null;          // desuscriptor de la escucha del duelo online
+let esperandoRival = false;     // true mientras miro al rival jugar su turno
+let rivalNivelRemoto = 0;       // nivel histórico del rival desde la sala
 let farmeoState = null;        // estado interno de Farmeo
 let coreoActual = null;        // referencia al coreo que se está jugando
 let rondaActiva = false;       // para saber si estamos en medio de una ronda
@@ -173,6 +193,12 @@ function startPoseDetection(video, canvas, poseChip) {
       // Si se cerró un paso, actualizamos la pose objetivo
       if (resultado.pasoCerrado) {
         pintarPoseFarmeo();
+        // v1.5.1 — en duelo online, subir el puntaje parcial para que el
+        // rival lo vea crecer en vivo en su pantalla de espera. Una vez por
+        // paso (no por frame) para no saturar Firebase.
+        if (dueloEsOnline) {
+          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre).catch(() => {});
+        }
         // Efecto visual de "pam" (opcional)
         const scoreEl = document.getElementById('hud-score');
         if (scoreEl) {
@@ -555,17 +581,37 @@ function wireFarmeoUI() {
 
 /* ---- Terminar la ronda actual ---- */
 function terminarRonda() {
-  // Detenemos la cámara y la detección (se hará en stopFarmeo)
-  // Guardamos el puntaje total acumulado en el estado de Farmeo
-  const puntaje = farmeoState ? farmeoState.puntajeTotal : 0;
+  const puntaje = farmeoState ? Math.round(farmeoState.puntajeTotal) : 0;
   if (!dueloState) dueloState = DueloEngine.crearDuelo();
 
-  const paso = DueloEngine.registrarTurno(
-    dueloState,
-    dueloState.turnoActual,
-    Math.round(puntaje)
-  );
+  // v1.5.1 — DUELO ONLINE: Firebase es la fuente de verdad. Subo mi puntaje
+  // y cedo el turno. NO decido local si va a traspaso o veredicto: eso lo
+  // dicta el estado de la sala, que llega por escucharDueloOnline().
+  if (dueloEsOnline) {
+    dueloState.jugadores[miRolOnline].puntaje = puntaje;
+    OnlineService.enviarPuntaje(puntaje).catch(() => {});
 
+    const rolRival = miRolOnline === 'A' ? 'B' : 'A';
+    const rivalYaJugo = dueloState.jugadores[rolRival].puntaje != null &&
+                        dueloState.jugadores[rolRival].puntaje !== undefined;
+
+    if (rivalYaJugo) {
+      // Los dos jugaron → yo cierro el duelo con el resultado (una sola vez).
+      const r = DueloEngine.resolver(dueloState);
+      OnlineService.cerrarConResultado(r.ganador).catch(() => {});
+      // El veredicto llegará por escucharDueloOnline (estado='terminado').
+    } else {
+      // Falta el rival → le paso el turno y quedo esperando.
+      OnlineService.pasarTurno().catch(() => {});
+      esperandoRival = true;
+      pintarEsperaRival({ rivalNombre: dueloState.jugadores[rolRival].nombre, rivalPuntaje: 0 });
+      showScreen('screen-espera');
+    }
+    return;
+  }
+
+  // ---- DUELO LOCAL (mismo dispositivo, por turnos con traspaso) ----
+  const paso = DueloEngine.registrarTurno(dueloState, dueloState.turnoActual, puntaje);
   if (paso.siguiente === 'traspaso') {
     pintarTraspaso(paso.turnoSiguiente);
     showScreen('screen-traspaso');
@@ -612,11 +658,25 @@ function pintarVeredicto() {
   const r = DueloEngine.resolver(dueloState);
   const jA = dueloState.jugadores.A, jB = dueloState.jugadores.B;
 
-  // Persistencia
-  const dataFinal = Store.guardarResultado(r, jB.nombre);
+  // v1.5.1 — MI rol: en local siempre soy 'A'; en online puede ser 'A' o 'B'.
+  const miRol   = dueloEsOnline ? miRolOnline : 'A';
+  const rolRival = miRol === 'A' ? 'B' : 'A';
+  const miPuntaje    = dueloState.jugadores[miRol].puntaje ?? 0;
+  const rivalPuntaje = dueloState.jugadores[rolRival].puntaje ?? 0;
+  const nombreRival  = dueloState.jugadores[rolRival].nombre;
+  // Resultado desde MI perspectiva para persistir bien (W/L/E correcto).
+  const miResultado = miPuntaje > rivalPuntaje ? 'A'
+                    : rivalPuntaje > miPuntaje ? 'B' : 'empate';
+
+  // Persistencia: guardo con MI puntaje como puntajeA (así el perfil suma lo mío).
+  const dataFinal = Store.guardarResultado(
+    { ganador: miResultado, puntajeA: miPuntaje, puntajeB: rivalPuntaje },
+    nombreRival
+  );
   if (window.AuthService && AuthService.estaLogueado()) {
     AuthService.subirPerfil(dataFinal).catch(() => {});
   }
+  informarNivelAOnline();
 
   const sub = document.querySelector('#screen-veredicto .screen__subtitle');
   if (sub) sub.textContent = `${jA.nombre} ${r.puntajeA} — ${r.puntajeB} ${jB.nombre}`;
@@ -627,10 +687,22 @@ function pintarVeredicto() {
 
   const badge = document.querySelector('#screen-veredicto .card .badge');
   if (badge) {
-    const gano = r.ganador === 'A';
-    badge.textContent = r.ganador === 'empate' ? 'EMPATE' : (gano ? 'GANASTE' : 'PERDISTE');
-    badge.classList.toggle('badge--win', gano || r.ganador === 'empate');
-    badge.classList.toggle('badge--lose', !gano && r.ganador !== 'empate');
+    // "GANASTE" si MI puntaje fue mayor (no si el jugador A ganó).
+    const gano = miResultado === 'A';
+    const empate = miResultado === 'empate';
+    badge.textContent = empate ? 'EMPATE' : (gano ? 'GANASTE' : 'PERDISTE');
+    badge.classList.toggle('badge--win', gano || empate);
+    badge.classList.toggle('badge--lose', !gano && !empate);
+  }
+
+  // v1.5.1 — cerrar la sesión online del duelo (ya terminó).
+  if (dueloEsOnline) {
+    if (dueloUnsub) { dueloUnsub(); dueloUnsub = null; }
+    OnlineService.detenerHeartbeat();
+    OnlineService.salir().catch(() => {});
+    dueloEsOnline = false;
+    miRolOnline = null;
+    esperandoRival = false;
   }
 
   dueloState = null;
@@ -905,6 +977,85 @@ async function mmUnirse() {
   }
 }
 
+/** Envía el puntaje histórico del perfil a online.js si soporta setNivelLocal.
+ *  Seguro: si esa versión de online.js no lo tiene, no hace nada. */
+function informarNivelAOnline() {
+  try {
+    const perfil = Store.obtenerPerfil();
+    if (window.OnlineService && typeof OnlineService.setNivelLocal === 'function') {
+      OnlineService.setNivelLocal(perfil.puntajeTotal || 0);
+    }
+  } catch (e) { console.warn('informarNivelAOnline:', e); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * v1.5.1 — DUELO ONLINE SINCRONIZADO (turnos estilo Yu-Gi-Oh)
+ * ───────────────────────────────────────────────────────────────────────
+ * Firebase es la fuente de verdad única: el campo 'turno' de la sala decide
+ * quién juega. Ambos dispositivos escuchan la sala y reaccionan igual:
+ *   · Es MI turno   → juego (cámara + motor).
+ *   · Es su turno   → pantalla de espera, veo su puntaje subir en vivo.
+ *   · estado='terminado' → los dos van al veredicto con el mismo resultado.
+ * ═══════════════════════════════════════════════════════════════════════ */
+function escucharDueloOnline() {
+  if (dueloUnsub) { dueloUnsub(); dueloUnsub = null; }
+  dueloUnsub = OnlineService.escucharSala((est) => {
+    if (!est.existe) return;
+
+    // Reflejar el puntaje del rival en el dueloState local (para HUD/veredicto).
+    const rolRival = miRolOnline === 'A' ? 'B' : 'A';
+    if (dueloState && typeof est.rivalPuntaje === 'number') {
+      dueloState.jugadores[rolRival].puntaje = est.rivalPuntaje;
+    }
+    if (typeof est.rivalNivel === 'number') rivalNivelRemoto = est.rivalNivel;
+
+    // El duelo terminó (alguien cerró con resultado): los dos al veredicto.
+    if (est.estado === 'terminado') {
+      irAVeredictoOnline(est);
+      return;
+    }
+
+    // Sincronizar de quién es el turno según Firebase.
+    if (dueloState) dueloState.turnoActual = est.turno;
+
+    if (est.esMiTurno) {
+      // Es mi turno: si estaba esperando, entro a jugar.
+      if (esperandoRival || currentScreen !== 'screen-farmeo') {
+        esperandoRival = false;
+        showScreen('screen-farmeo');
+      }
+    } else {
+      // Es turno del rival: pantalla de espera con su puntaje en vivo.
+      esperandoRival = true;
+      pintarEsperaRival(est);
+      if (currentScreen !== 'screen-espera') showScreen('screen-espera');
+    }
+  });
+}
+
+/** Pinta la pantalla de espera mientras el rival juega su turno. */
+function pintarEsperaRival(est) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('espera-rival-nombre', est.rivalNombre || 'Rival');
+  set('espera-rival-puntaje', est.rivalPuntaje || 0);
+  const pose = est.rivalPose || est.poseActual;
+  if (pose) set('espera-rival-pose', pose);
+}
+
+/** Cierre sincronizado: ambos ven el mismo veredicto desde Firebase. */
+function irAVeredictoOnline(est) {
+  if (dueloUnsub) { dueloUnsub(); dueloUnsub = null; }
+  esperandoRival = false;
+  // Aseguramos los dos puntajes en el dueloState antes de resolver.
+  const rolRival = miRolOnline === 'A' ? 'B' : 'A';
+  if (dueloState) {
+    if (typeof est.rivalPuntaje === 'number') dueloState.jugadores[rolRival].puntaje = est.rivalPuntaje;
+    dueloState.terminado = true;
+  }
+  pintarVeredicto();
+  showScreen('screen-veredicto');
+}
+
 function mmEmpezarDuelo() {
   const sesion = OnlineService.sesionActual();
   if (!sesion) return;
@@ -913,8 +1064,14 @@ function mmEmpezarDuelo() {
   const nombreA     = sesion.rol === 'A' ? perfil.nombre : rivalNombre;
   const nombreB     = sesion.rol === 'A' ? rivalNombre   : perfil.nombre;
   dueloState = DueloEngine.crearDuelo(nombreA, nombreB);
-  OnlineService.detenerHeartbeat();
+
+  // v1.5.1 — DUELO ONLINE SINCRONIZADO. Marcamos que este duelo es online y
+  // guardamos mi rol. NO cortamos heartbeat ni escucha: el duelo se juega
+  // sincronizado contra Firebase (turnos estilo Yu-Gi-Oh, misma partida).
+  dueloEsOnline = true;
+  miRolOnline   = sesion.rol;
   if (mmUnsubSala) { mmUnsubSala(); mmUnsubSala = null; }
+  escucharDueloOnline();  // re-suscribe con el handler del DUELO (no del lobby)
   showScreen('screen-farmeo');
 }
 
@@ -968,6 +1125,14 @@ document.addEventListener('DOMContentLoaded', () => {
   wirePerfil();
   wireAuth();
   wireAjustes();
+
+  // v1.4.1 — Identidad por defecto: INVITADO temporal (se borra al cerrar
+  // pestaña). Login Google (en wireAuth) cambia a modo cuenta persistente.
+  if (typeof Store.fijarModo === 'function') Store.fijarModo('invitado');
+  if (Store.nombreEsDefault() && typeof Store.nombreInvitadoAleatorio === 'function') {
+    Store.guardarNombre(Store.nombreInvitadoAleatorio());
+  }
+  informarNivelAOnline();
 
   if (Store.nombreEsDefault()) {
     showScreen('screen-onboarding');
@@ -1051,8 +1216,10 @@ function wireAuth() {
     btnLogin.disabled = true;
     try {
       await AuthService.iniciarSesionGoogle();
+      if (typeof Store.fijarModo === 'function') Store.fijarModo('cuenta'); // v1.4.1 persistente
       const perfilFinal = await AuthService.sincronizarPerfil(Store.exportarTodo());
       Store.reemplazarPerfil(perfilFinal);
+      informarNivelAOnline();
       pintarHome();
     } catch (err) {
       const codigo = err && err.code;
@@ -1067,5 +1234,12 @@ function wireAuth() {
 
   btnLogout?.addEventListener('click', async () => {
     await AuthService.cerrarSesion();
+    // v1.4.1 — al salir, volvemos a invitado temporal.
+    if (typeof Store.fijarModo === 'function') Store.fijarModo('invitado');
+    if (Store.nombreEsDefault() && typeof Store.nombreInvitadoAleatorio === 'function') {
+      Store.guardarNombre(Store.nombreInvitadoAleatorio());
+    }
+    informarNivelAOnline();
+    pintarHome();
   });
 }

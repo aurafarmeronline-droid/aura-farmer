@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — online.js
+   v0.13-web (proyecto v1.5.1) — nivel del jugador viaja en el nodo de sala
+     (setNivelLocal + rivalNivel en proyectarEstado) para el HUD del rival.
    v0.12.1-web — Fix emparejamiento auto: quitado onDisconnect sobre
      'conectado' en el arranque (expulsaba en móvil por microcorte) +
      rivalPresente (ficha existe, sin heartbeat) para que la PC enganche.
@@ -193,6 +195,7 @@ const OnlineService = (() => {
       miPuntaje: yo.puntajeTotal ?? 0,
       rivalNombre: rival.nombre || 'Rival',
       rivalPuntaje: rival.puntajeTotal ?? 0,
+      rivalNivel: rival.nivel ?? 0,   // v1.4.1 — nivel histórico del rival
       // rivalPresente: la ficha del rival EXISTE en la sala (sin mirar heartbeat).
       // Sirve para enganchar al emparejar, cuando el rival todavía no re-latió.
       rivalPresente: !!rival.nombre,
@@ -238,12 +241,18 @@ const OnlineService = (() => {
   }
 
   /** Arma el nodo inicial de un jugador. */
+  /* v1.4.1 — Nivel/puntaje acumulado del jugador local, para que el rival lo
+   * vea en la sala. Lo setea app.js con setNivelLocal() desde Store. */
+  let nivelLocal = 0;
+  function setNivelLocal(n) { nivelLocal = Number(n) || 0; }
+
   function nodoJugador(nombre) {
     return {
       nombre: String(nombre || 'Jugador').slice(0, 20),
       conectado: true,
       heartbeat: Date.now(),
-      puntajeTotal: 0,
+      puntajeTotal: 0,       // puntaje del DUELO en curso
+      nivel: nivelLocal,     // puntaje HISTÓRICO del perfil (HUD del rival)
       poseActual: null
     };
   }
@@ -549,7 +558,7 @@ const OnlineService = (() => {
   /* API pública — datos planos hacia afuera, nunca objetos de Firebase. */
   return {
     // ciclo de vida
-    init, estaDisponible, sesionActual,
+    init, estaDisponible, sesionActual, setNivelLocal,
     // matchmaking (F2 código de sala + F3 automático)
     crearSala, unirseSala, buscarRival, cancelarBusqueda,
     // sincronización (F3)
