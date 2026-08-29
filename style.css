@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — style.css
+   v1.8.1-web — Fix cámara chica en móvil: viewfinder con min-height
+     340px y aspect-ratio 3/4 (antes se aplastaba a una franja fina
+     en pantallas angostas).
    v1.2.2-web — MEGA UPDATE VISUAL: pantalla de farmeo rediseñada
      (topbar+marca, misión, medidor de aura, panel VS, barra de
      ronda, reproductor, drawers) + bottom-nav de 5 slots con
@@ -257,8 +260,9 @@ body{
 .viewfinder{
   position:relative;
   width:100%;
-  aspect-ratio:380/460;
-  max-height:460px;
+  aspect-ratio:3/4;
+  min-height:340px;          /* v1.8.1 — evita que se aplaste en móvil */
+  max-height:60vh;           /* no come toda la pantalla en desktop */
   background:#000;
   border-radius:var(--radius);
   border:1px solid var(--border);

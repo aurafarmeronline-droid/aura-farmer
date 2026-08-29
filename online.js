@@ -196,6 +196,8 @@ const OnlineService = (() => {
       rivalNombre: rival.nombre || 'Rival',
       rivalPuntaje: rival.puntajeTotal ?? 0,
       rivalNivel: rival.nivel ?? 0,   // v1.4.1 — nivel histórico del rival
+      rivalJugo: !!rival.jugoTurno,   // v1.6.1 — el rival ya cerró su turno
+      miJugo: !!yo.jugoTurno,
       // rivalPresente: la ficha del rival EXISTE en la sala (sin mirar heartbeat).
       // Sirve para enganchar al emparejar, cuando el rival todavía no re-latió.
       rivalPresente: !!rival.nombre,
@@ -494,6 +496,19 @@ const OnlineService = (() => {
     });
   }
 
+  /** v1.6.1 — Marca que YO ya jugué mi turno (flag explícito en la sala).
+   *  Distingue "jugó y sacó 0" de "todavía no jugó". */
+  async function marcarTurnoJugado(puntaje) {
+    if (!disponible || !sesion) return;
+    const { ref, update } = fb.DB;
+    const miRef = ref(fb.db, 'salas/' + sesion.salaId + '/jugador' + sesion.rol);
+    await update(miRef, {
+      jugoTurno: true,
+      puntajeTotal: Math.max(0, Math.round(puntaje || 0)),
+      heartbeat: Date.now()
+    });
+  }
+
   /** F3 — Escribe el resultado final (lo llama quien detecta el cierre). */
   async function cerrarConResultado(ganador) {
     if (!disponible || !sesion) return;
@@ -562,7 +577,7 @@ const OnlineService = (() => {
     // matchmaking (F2 código de sala + F3 automático)
     crearSala, unirseSala, buscarRival, cancelarBusqueda,
     // sincronización (F3)
-    escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado,
+    escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado, marcarTurnoJugado,
     // robustez (F4)
     iniciarHeartbeat, detenerHeartbeat, salir,
     // puras (export para tests / reuso)
