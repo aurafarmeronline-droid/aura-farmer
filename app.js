@@ -1016,6 +1016,12 @@ function escucharDueloOnline() {
   dueloUnsub = OnlineService.escucharSala((est) => {
     if (!est.existe) return;
 
+    // === DIAGNÓSTICO TEMPORAL v1.8.1 (borrar cuando ande) ===
+    console.log('[DUELO]', 'miRol=' + miRolOnline, 'turno=' + est.turno,
+                'esMiTurno=' + est.esMiTurno, 'miJugo=' + est.miJugo,
+                'rivalJugo=' + est.rivalJugo, 'estado=' + est.estado,
+                'pantalla=' + currentScreen);
+
     // Reflejar el puntaje del rival en el dueloState local (para HUD/veredicto).
     const rolRival = miRolOnline === 'A' ? 'B' : 'A';
     if (dueloState && typeof est.rivalPuntaje === 'number') {
@@ -1043,19 +1049,22 @@ function escucharDueloOnline() {
     // Sincronizar de quién es el turno según Firebase.
     if (dueloState) dueloState.turnoActual = est.turno;
 
-    if (est.esMiTurno && !est.miJugo) {
-      // Es mi turno Y todavía no jugué: entro a jugar (solo si no estoy ya ahí).
+    if (est.esMiTurno && !est.miJugo && est.estado === 'jugando') {
+      // Es mi turno Y todavía no jugué: entro a jugar.
+      // Solo si NO estoy ya jugando (evita reiniciar la cámara con cada update).
       if (currentScreen !== 'screen-farmeo') {
+        console.log('[DUELO] → entrando a MI turno (screen-farmeo)');
         esperandoRival = false;
         showScreen('screen-farmeo');
       }
     } else {
       // Turno del rival, o ya jugué y espero el cierre: pantalla de espera.
       esperandoRival = true;
-      // Actualizo el puntaje en vivo SIEMPRE (para verlo subir), pero solo
-      // cambio de pantalla si no estoy ya en espera (evita reinicios).
       pintarEsperaRival(est);
-      if (currentScreen !== 'screen-espera') showScreen('screen-espera');
+      if (currentScreen !== 'screen-espera') {
+        console.log('[DUELO] → yendo a espera (screen-espera)');
+        showScreen('screen-espera');
+      }
     }
   });
 }
