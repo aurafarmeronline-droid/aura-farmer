@@ -4,6 +4,14 @@
  * We Do — dtp & ele · Aura Farmer Web
  *
  * CHANGELOG (versión del MOTOR de farmeo de aura)
+ *   v1.3.0-web — CATÁLOGO AMPLIADO: de 7 a 18 poses (resto del tutorial +
+ *                       culturismo Arnold/classic + cosplay/dibujo) y de 1 a
+ *                       4 coreos (básico, culturista, actitud, maratón).
+ *                       Sin cambios de lógica; solo datos nuevos.
+ *   v1.2.1-web — Limpieza de textos: notas reemplazadas por instrucciones
+ *                       claras (las que ve el jugador como hint) y renombrada
+ *                       la pose "Zorro Guapo" → "Señalar con desprecio".
+ *                       Sin cambios de lógica ni de puntaje.
  *   v1.2.0-web — CAPA DE PULIDO (reglas sacadas de batallas reales con
  *                       jurado). Tres bonus/penalización que se aplican al
  *                       cerrar paso / terminar coreo, encima de la fórmula
@@ -147,12 +155,12 @@ const POSES = {
     ],
     // "trompita de pato" + ojos entrecerrados → labios fruncidos.
     cara: { blendshape: 'mouthPucker', min: 0.3 }, // ⚠️
-    nota: 'Dedo a la boca, trompita, ojos como con mucho sol. Silencio.',
+    nota: 'Llevá un dedo a la boca pidiendo silencio.',
   },
 
   zorro_guapo: {
     id: 'zorro_guapo',
-    nombre: 'Zorro Guapo de Sutopía',
+    nombre: 'Señalar con desprecio',
     emoji: '👉',
     tier: 1,
     detectable: true,
@@ -163,7 +171,7 @@ const POSES = {
       { articulacion: 'hombro_izq', ideal: 90, tol_perfect: 25, tol_good: 45 }, // ⚠️
     ],
     cara: null,
-    nota: 'Señalar "apestas, bro" con cara de desprecio, sin que importe nada.',
+    nota: 'Señalá al rival con el brazo extendido al frente.',
   },
 
   six: {
@@ -181,7 +189,7 @@ const POSES = {
       { articulacion: 'hombro_der', ideal: 150, tol_perfect: 25, tol_good: 45 }, // ⚠️
     ],
     cara: null,
-    nota: 'Manos arriba, de lento a lo más rápido que puedas.',
+    nota: 'Levantá las dos manos por encima de los hombros.',
   },
 
   db: {
@@ -199,7 +207,7 @@ const POSES = {
       { articulacion: 'hombro_der', ideal: 120, tol_perfect: 25, tol_good: 45 }, // ⚠️
     ],
     cara: null,
-    nota: 'Doble bíceps clásico; "te hueles la axila" entre pose y pose.',
+    nota: 'Flexioná los dos brazos: doble bíceps de culturista.',
   },
 
   npc_lloron: {
@@ -215,7 +223,7 @@ const POSES = {
       { articulacion: 'codo_der', ideal: 30, tol_perfect: 20, tol_good: 40 }, // ⚠️
     ],
     cara: null, // la cara queda tapada; se detecta por ausencia, se ve en Fase 2
-    nota: 'Cubrirse la cara con las manos y "llorar" como NPC de los Sims.',
+    nota: 'Cubrite la cara con las dos manos.',
   },
 
   codo_x3: {
@@ -231,7 +239,7 @@ const POSES = {
       { articulacion: 'hombro_izq', ideal: 80, tol_perfect: 25, tol_good: 45 }, // ⚠️
     ],
     cara: null,
-    nota: 'Codo, codo, codo — tres rápidos. Combinable con six.',
+    nota: 'Marcá el codo hacia afuera a la altura del hombro.',
   },
 
   db67: {
@@ -249,7 +257,203 @@ const POSES = {
       { articulacion: 'hombro_der', ideal: 120, tol_perfect: 25, tol_good: 45 }, // ⚠️
     ],
     cara: null,
-    nota: 'El favorito: DB y 67 juntos.',
+    nota: 'Doble bíceps con las manos bien arriba.',
+  },
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * POSES NUEVAS v1.2.1 — resto del tutorial (Tier 1) + culturismo/cosplay.
+   * Todas torso-up detectables. Ángulos estimados ⚠️ (falta calibrar).
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  // --- Del tutorial de farmeo (movimientos que faltaban, versión torso) ---
+
+  brazos_cruzados: {
+    id: 'brazos_cruzados',
+    nombre: 'Brazos Cruzados',
+    emoji: '😤',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    angulos: [
+      // Ambos brazos cruzados sobre el pecho: codos muy cerrados, hacia el centro.
+      { articulacion: 'codo_izq', ideal: 40, tol_perfect: 20, tol_good: 40 }, // ⚠️
+      { articulacion: 'codo_der', ideal: 40, tol_perfect: 20, tol_good: 40 }, // ⚠️
+      { articulacion: 'hombro_izq', ideal: 25, tol_perfect: 20, tol_good: 40 }, // ⚠️
+      { articulacion: 'hombro_der', ideal: 25, tol_perfect: 20, tol_good: 40 }, // ⚠️
+    ],
+    cara: null,
+    nota: 'Cruzá los dos brazos sobre el pecho con actitud.',
+  },
+
+  mirada_yagami: {
+    id: 'mirada_yagami',
+    nombre: 'Mirada Yagami',
+    emoji: '😈',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Pose de solo-cara: una mano puede tapar media cara, pero lo clave es la mirada.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 60, tol_perfect: 30, tol_good: 55 }, // ⚠️ mano cerca de la cara
+    ],
+    // Mirada intensa hacia abajo/costado tipo Light Yagami: cejas hacia abajo.
+    cara: { blendshape: 'browDownLeft', min: 0.25 }, // ⚠️
+    nota: 'Mirada intensa y desafiante, cabeza apenas inclinada.',
+  },
+
+  rugido: {
+    id: 'rugido',
+    nombre: 'Rugido',
+    emoji: '🦁',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Puños apretados, brazos tensos hacia abajo/afuera, boca bien abierta gritando.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 110, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'codo_der', ideal: 110, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_izq', ideal: 45, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_der', ideal: 45, tol_perfect: 25, tol_good: 45 }, // ⚠️
+    ],
+    cara: { blendshape: 'jawOpen', min: 0.4 }, // boca abierta rugiendo ⚠️
+    nota: 'Tensá los brazos y rugí con la boca bien abierta.',
+  },
+
+  sonrisa_chad: {
+    id: 'sonrisa_chad',
+    nombre: 'Sonrisa de Chad',
+    emoji: '😎',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Pose de actitud: brazos relajados, lo que puntúa es la sonrisa confiada.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 150, tol_perfect: 35, tol_good: 60 }, // ⚠️ brazo relajado
+    ],
+    cara: { blendshape: 'mouthSmileLeft', min: 0.4 }, // sonrisa confiada ⚠️
+    nota: 'Sonrisa confiada de Chad, seguro de vos mismo.',
+  },
+
+  // --- De culturismo (imágenes de referencia: Arnold, classic poses) ---
+
+  most_muscular: {
+    id: 'most_muscular',
+    nombre: 'Most Muscular',
+    emoji: '🗿',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Ambas manos al centro adelante, codos hacia afuera, tensión máxima.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 70, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'codo_der', ideal: 70, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_izq', ideal: 55, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_der', ideal: 55, tol_perfect: 25, tol_good: 45 }, // ⚠️
+    ],
+    cara: null,
+    nota: 'Manos al centro y tensá todo: pose "most muscular".',
+  },
+
+  front_lat_spread: {
+    id: 'front_lat_spread',
+    nombre: 'Front Lat Spread',
+    emoji: '🦅',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Manos en la cintura, codos bien abiertos para "abrir las alas".
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 90, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'codo_der', ideal: 90, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_izq', ideal: 60, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_der', ideal: 60, tol_perfect: 25, tol_good: 45 }, // ⚠️
+    ],
+    cara: null,
+    nota: 'Manos en la cintura y abrí los codos como alas.',
+  },
+
+  side_biceps: {
+    id: 'side_biceps',
+    nombre: 'Side Biceps',
+    emoji: '💥',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // De costado: un brazo flexionado marcando bíceps, el otro lo agarra.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 75, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_izq', ideal: 70, tol_perfect: 30, tol_good: 50 }, // ⚠️
+    ],
+    cara: null,
+    nota: 'De costado, flexioná un brazo marcando el bíceps.',
+  },
+
+  // --- De cosplay/dibujo (imágenes Clip Studio: poses expresivas) ---
+
+  victory_pose: {
+    id: 'victory_pose',
+    nombre: 'Pose de Victoria',
+    emoji: '✌️',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Un brazo arriba en V de victoria, el otro relajado. Actitud triunfal.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 60, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_izq', ideal: 150, tol_perfect: 30, tol_good: 50 }, // ⚠️
+    ],
+    cara: null,
+    nota: 'Un brazo arriba haciendo la V de victoria.',
+  },
+
+  corazon: {
+    id: 'corazon',
+    nombre: 'Corazón',
+    emoji: '💖',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Ambas manos juntas arriba de la cabeza formando corazón: codos abiertos.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 100, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'codo_der', ideal: 100, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_izq', ideal: 135, tol_perfect: 25, tol_good: 45 }, // ⚠️
+      { articulacion: 'hombro_der', ideal: 135, tol_perfect: 25, tol_good: 45 }, // ⚠️
+    ],
+    cara: null,
+    nota: 'Formá un corazón con las dos manos sobre la cabeza.',
+  },
+
+  pensador: {
+    id: 'pensador',
+    nombre: 'El Pensador',
+    emoji: '🤔',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Mano al mentón, codo apoyado: pose pensativa/misteriosa.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 35, tol_perfect: 25, tol_good: 45 }, // ⚠️ mano al mentón
+      { articulacion: 'hombro_izq', ideal: 40, tol_perfect: 25, tol_good: 45 }, // ⚠️
+    ],
+    cara: null,
+    nota: 'Llevá la mano al mentón con cara pensativa.',
+  },
+
+  senalar_cielo: {
+    id: 'senalar_cielo',
+    nombre: 'Señalar al Cielo',
+    emoji: '☝️',
+    tier: 1,
+    detectable: true,
+    espejo_ok: true,
+    // Un brazo totalmente extendido apuntando arriba: pose épica de anime.
+    angulos: [
+      { articulacion: 'codo_izq', ideal: 170, tol_perfect: 20, tol_good: 40 }, // ⚠️ brazo recto
+      { articulacion: 'hombro_izq', ideal: 165, tol_perfect: 25, tol_good: 45 }, // ⚠️ brazo hacia arriba
+    ],
+    cara: null,
+    nota: 'Extendé un brazo apuntando al cielo, pose épica.',
   },
 
 };
@@ -277,6 +481,48 @@ const COREOS = {
       { poseId: 'zorro_guapo', duracion_ms: 2000, gracia_ms: 800 },
       { poseId: 'six',         duracion_ms: 3000, gracia_ms: 800 },
       { poseId: 'db',          duracion_ms: 2500, gracia_ms: 800 },
+    ],
+  },
+
+  // Coreo de culturismo: poses de físico, escalando en intensidad.
+  culturista: {
+    id: 'culturista',
+    nombre: 'Rutina Culturista',
+    nivel: 'medio',
+    pasos: [
+      { poseId: 'front_lat_spread', duracion_ms: 2500, gracia_ms: 800 },
+      { poseId: 'side_biceps',      duracion_ms: 2500, gracia_ms: 800 },
+      { poseId: 'db',               duracion_ms: 2500, gracia_ms: 800 },
+      { poseId: 'most_muscular',    duracion_ms: 3000, gracia_ms: 800 },
+    ],
+  },
+
+  // Coreo de actitud: mezcla gestos faciales y de brazos, cierra fuerte.
+  actitud: {
+    id: 'actitud',
+    nombre: 'Puro Aura',
+    nivel: 'medio',
+    pasos: [
+      { poseId: 'sonrisa_chad',    duracion_ms: 2000, gracia_ms: 800 },
+      { poseId: 'brazos_cruzados', duracion_ms: 2500, gracia_ms: 800 },
+      { poseId: 'mirada_yagami',   duracion_ms: 2500, gracia_ms: 800 },
+      { poseId: 'rugido',          duracion_ms: 3000, gracia_ms: 800 },
+    ],
+  },
+
+  // Coreo larga: recorre muchas poses. Para probar variedad e intensidad.
+  maraton: {
+    id: 'maraton',
+    nombre: 'Maratón de Aura',
+    nivel: 'avanzado',
+    pasos: [
+      { poseId: 'victory_pose',  duracion_ms: 2000, gracia_ms: 700 },
+      { poseId: 'corazon',       duracion_ms: 2000, gracia_ms: 700 },
+      { poseId: 'pensador',      duracion_ms: 2000, gracia_ms: 700 },
+      { poseId: 'six',           duracion_ms: 2000, gracia_ms: 700 },
+      { poseId: 'codo_x3',       duracion_ms: 2000, gracia_ms: 700 },
+      { poseId: 'db67',          duracion_ms: 2500, gracia_ms: 700 },
+      { poseId: 'most_muscular', duracion_ms: 3000, gracia_ms: 700 },
     ],
   },
 
