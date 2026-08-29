@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v1.6.1-web — Pantalla de espera del rival (fin de la pantalla negra) +
+     botón "Terminar turno" manual + revancha ya cableada en HTML.
    v1.5.1-web — MULTIPLAYER SINCRONIZADO (turnos estilo Yu-Gi-Oh):
      · Firebase es la fuente de verdad del turno. Los dos dispositivos
        escuchan la sala y ven LA MISMA partida (antes cada uno corría su
@@ -552,6 +554,13 @@ function wireFarmeoUI() {
   on('btn-ronda-menu',  () => abrirDrawer('menu-drawer'));
   on('menu-cerrar',     () => cerrarDrawer('menu-drawer'));
 
+  // v1.6.1 — Terminar turno manual: corta la ronda y cobra lo farmeado.
+  on('btn-terminar-turno', () => {
+    if (!rondaActiva) return;
+    rondaActiva = false;
+    terminarRonda();
+  });
+
   on('btn-mision-info', abrirInfoPose);
   on('op-info-pose',    abrirInfoPose);
   on('info-cerrar',     () => cerrarDrawer('info-drawer'));
@@ -1036,10 +1045,12 @@ function escucharDueloOnline() {
 /** Pinta la pantalla de espera mientras el rival juega su turno. */
 function pintarEsperaRival(est) {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  set('espera-rival-nombre', est.rivalNombre || 'Rival');
+  const nombre = est.rivalNombre || 'Rival';
+  set('espera-rival-nombre', nombre);
   set('espera-rival-puntaje', est.rivalPuntaje || 0);
+  set('espera-rival-avatar', nombre.slice(0, 2).toUpperCase());
   const pose = est.rivalPose || est.poseActual;
-  if (pose) set('espera-rival-pose', pose);
+  set('espera-rival-pose', pose ? ('Haciendo: ' + pose) : '');
 }
 
 /** Cierre sincronizado: ambos ven el mismo veredicto desde Firebase. */

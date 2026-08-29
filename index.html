@@ -325,6 +325,28 @@
   </section>
 
   <!-- ============================================================
+       ESPERA — v1.6.1: mientras el rival juega su turno (online).
+       El puntaje del rival se actualiza en vivo desde app.js.
+       ============================================================ -->
+  <section id="screen-espera" class="screen hidden">
+    <div class="traspaso">
+      <span class="badge badge--combo">Turno del rival</span>
+      <div class="avatar" style="width:88px;height:88px;" id="espera-rival-avatar">RV</div>
+      <div>
+        <h2 class="screen__title" style="text-align:center;">
+          Juega <span id="espera-rival-nombre">Rival</span>
+        </h2>
+        <p class="screen__subtitle">Esperá tu turno…</p>
+      </div>
+      <div class="card" style="text-align:center; min-width:180px;">
+        <div class="screen__subtitle" style="margin:0 0 4px;">Aura del rival</div>
+        <div class="stat stat--lg" id="espera-rival-puntaje">0</div>
+        <div class="screen__subtitle" style="margin:6px 0 0; opacity:.7;" id="espera-rival-pose"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
        FARMEO (cámara) — v1.2.2 MEGA UPDATE
        ============================================================ -->
   <section id="screen-farmeo" class="screen screen--farmeo hidden">
@@ -439,6 +461,11 @@
         <svg class="ic"><use href="#ic-dots"/></svg>
       </button>
     </div>
+
+    <!-- v1.6.1: terminar el turno manualmente (además del fin automático
+         cuando la coreo se completa). Corta y sube el puntaje ya farmeado. -->
+    <button class="btn btn--secondary btn--block" id="btn-terminar-turno"
+            style="margin-top:10px;">Terminar turno</button>
 
     <!-- ---- 6. Reproductor (aura booster) ---- -->
     <section class="player" id="player">
