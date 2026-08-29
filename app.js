@@ -1,5 +1,18 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v1.9.1-web — Pantalla de IDENTIDAD al iniciar (screen-identidad):
+     elegir "Iniciar con Google" o "Jugar como invitado" (con nombre).
+     Si ya hay sesión Google, se saltea directo a inicio.
+
+   ⚠️⚠️ IMPORTANTE — ANTES DE LA VERSIÓN FINAL, SACAR EL DEBUG ⚠️⚠️
+     Hay logs de diagnóstico activos: la función dbg() (busca "function dbg"),
+     el cartel #debug-duelo en index.html, y las llamadas dbg(...) en el
+     duelo online. Sirven para diagnosticar el multiplayer. NO afectan el
+     juego, pero hay que quitarlos antes de publicar la versión final.
+     Buscar en este archivo: dbg(   y en index.html: id="debug-duelo".
+   ============================================================ */
+/* ============================================================
+   AURA FARMER — app.js (con Farmeo integrado)
    v1.8.2-web — FIX CRÍTICO multiplayer: limpiarMatchmaking ya NO cierra
      la sesión al pasar a la cámara (era la causa de sesionActual()=null
      y del jugador 2 muerto). + Cuenta atrás de 30s en panel listo con
@@ -41,6 +54,7 @@
 // pantallas donde el bottom-nav NO se muestra
 // (v1.2.2: farmeo SÍ lo muestra — el nav es parte del diseño nuevo)
 const SCREENS_SIN_NAV = new Set([
+  'screen-identidad',
   'screen-onboarding',
   'screen-matchmaking',
   'screen-traspaso',
@@ -95,6 +109,7 @@ let miRolOnline = null;         // 'A' o 'B' — mi rol en el duelo online
 let dueloUnsub = null;          // desuscriptor de la escucha del duelo online
 let esperandoRival = false;     // true mientras miro al rival jugar su turno
 let rivalYaJugoOnline = false;  // v1.6.1 — el rival ya cerró su turno (flag Firebase)
+let ultimoEnvioPuntaje = 0;     // v1.9.1 — throttle de envío de puntaje en vivo
 let rivalNivelRemoto = 0;       // nivel histórico del rival desde la sala
 let farmeoState = null;        // estado interno de Farmeo
 let coreoActual = null;        // referencia al coreo que se está jugando
@@ -202,6 +217,17 @@ function startPoseDetection(video, canvas, poseChip) {
         aura: resultado.auraInstante,
         flags: resultado.flags || []
       });
+
+      // v1.9.1 — En duelo online, subir mi puntaje seguido (throttle ~1.5s)
+      // para que el rival lo vea crecer FLUIDO en su pantalla de espera, no
+      // solo al cerrar cada paso. El throttle evita saturar Firebase.
+      if (dueloEsOnline) {
+        const ahora = Date.now();
+        if (ahora - ultimoEnvioPuntaje > 1500) {
+          ultimoEnvioPuntaje = ahora;
+          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre).catch(() => {});
+        }
+      }
 
       // Si se cerró un paso, actualizamos la pose objetivo
       if (resultado.pasoCerrado) {
@@ -1216,21 +1242,62 @@ document.addEventListener('DOMContentLoaded', () => {
   wirePerfil();
   wireAuth();
   wireAjustes();
+  wireIdentidad();   // v1.9.1
 
-  // v1.4.1 — Identidad por defecto: INVITADO temporal (se borra al cerrar
-  // pestaña). Login Google (en wireAuth) cambia a modo cuenta persistente.
-  if (typeof Store.fijarModo === 'function') Store.fijarModo('invitado');
-  if (Store.nombreEsDefault() && typeof Store.nombreInvitadoAleatorio === 'function') {
-    Store.guardarNombre(Store.nombreInvitadoAleatorio());
-  }
-  informarNivelAOnline();
-
-  if (Store.nombreEsDefault()) {
-    showScreen('screen-onboarding');
-  } else {
+  // v1.9.1 — Pantalla de identidad al iniciar. Si ya hay sesión Google previa,
+  // la salteamos directo a inicio. Si no, el jugador elige Google o invitado.
+  const yaLogueado = window.AuthService && AuthService.estaLogueado &&
+                     AuthService.estaLogueado();
+  if (yaLogueado) {
+    if (typeof Store.fijarModo === 'function') Store.fijarModo('cuenta');
+    informarNivelAOnline();
     showScreen('screen-inicio');
+  } else {
+    showScreen('screen-identidad');
   }
 });
+
+/* v1.9.1 — Pantalla de identidad: elegir Google o invitado antes de jugar. */
+function wireIdentidad() {
+  const btnGoogle   = document.getElementById('id-btn-google');
+  const btnInvitado = document.getElementById('id-btn-invitado');
+  const inp         = document.getElementById('id-input-invitado');
+  const err         = document.getElementById('id-error');
+  const setErr = (m) => { if (err) err.textContent = m || ''; };
+
+  btnGoogle?.addEventListener('click', async () => {
+    if (!AuthService || !AuthService.estaDisponible || !AuthService.estaDisponible()) {
+      AuthService?.init?.();
+    }
+    btnGoogle.disabled = true;
+    try {
+      await AuthService.iniciarSesionGoogle();
+      if (typeof Store.fijarModo === 'function') Store.fijarModo('cuenta');
+      const perfilFinal = await AuthService.sincronizarPerfil(Store.exportarTodo());
+      Store.reemplazarPerfil(perfilFinal);
+      informarNivelAOnline();
+      showScreen('screen-inicio');
+    } catch (e) {
+      const cod = e && e.code;
+      if (cod !== 'auth/popup-closed-by-user' && cod !== 'auth/cancelled-popup-request') {
+        setErr('No se pudo iniciar con Google. Probá de nuevo o jugá como invitado.');
+      }
+    } finally {
+      btnGoogle.disabled = false;
+    }
+  });
+
+  btnInvitado?.addEventListener('click', () => {
+    const nombre = (inp?.value || '').trim();
+    if (nombre.length < 2) { setErr('Poné un nombre de al menos 2 letras.'); return; }
+    if (typeof Store.fijarModo === 'function') Store.fijarModo('invitado');
+    Store.guardarNombre(nombre);
+    informarNivelAOnline();
+    showScreen('screen-inicio');
+  });
+
+  inp?.addEventListener('input', () => setErr(''));
+}
 
 /* ---- Perfil editable (sin cambios) ---- */
 function wirePerfil() {
