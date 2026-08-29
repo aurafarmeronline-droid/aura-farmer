@@ -1,14 +1,26 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v1.2.2-web — MEGA UPDATE VISUAL de la pantalla de farmeo:
+     · HUD nuevo: panel VS (dos fichas + marcador + barra), medidor
+       vertical de aura, barra de ronda con dots y dos relojes.
+     · Relojes en vivo derivados del estado real de Farmeo
+       (tiempo restante de la pose y de la coreo). Funciones puras
+       separadas del DOM → testeadas con node.
+     · Drawers de Chat / Opciones / Info que NO navegan: se abren
+       encima de la pantalla para no cortar el duelo en curso.
+     · Bottom-nav visible durante el farmeo, con confirmación antes
+       de abandonar una ronda activa.
+     · Reproductor (player.js) montado y pausado con la pantalla.
+     · Pantallas nuevas: Tienda y Ajustes.
    v1.0-web — Motor principal reemplazado por Farmeo (farmeo.js)
    ============================================================ */
 
 // pantallas donde el bottom-nav NO se muestra
+// (v1.2.2: farmeo SÍ lo muestra — el nav es parte del diseño nuevo)
 const SCREENS_SIN_NAV = new Set([
   'screen-onboarding',
   'screen-matchmaking',
   'screen-traspaso',
-  'screen-farmeo',
   'screen-veredicto'
 ]);
 
@@ -18,12 +30,19 @@ const SCREEN_HOOKS = {
   'screen-home':        { onShow: pintarHome },
   'screen-historial':   { onShow: pintarHistorial },
   'screen-ranking':     { onShow: pintarRanking },
+  'screen-tienda':      { onShow: pintarTienda },
   'screen-matchmaking': { onShow: iniciarMatchmaking, onHide: limpiarMatchmaking }
 };
 
 let currentScreen = null;
 
 function showScreen(id) {
+  // Guarda: salir del farmeo con una ronda a medias pierde el puntaje.
+  // Pedimos confirmación una sola vez, y solo si realmente se está jugando.
+  if (currentScreen === 'screen-farmeo' && id !== 'screen-farmeo' && rondaActiva) {
+    const salir = window.confirm('Estás en medio de una ronda. ¿Salir y perder el puntaje?');
+    if (!salir) return;
+  }
   if (currentScreen && SCREEN_HOOKS[currentScreen]?.onHide) {
     SCREEN_HOOKS[currentScreen].onHide();
   }
@@ -32,7 +51,8 @@ function showScreen(id) {
   });
   const nav = document.getElementById('bottom-nav');
   nav.classList.toggle('hidden', SCREENS_SIN_NAV.has(id));
-  document.querySelectorAll('.bottom-nav__item').forEach(btn => {
+  // v1.2.2: el botón central de cámara también se marca activo.
+  document.querySelectorAll('.bottom-nav__item, .bottom-nav__cam').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.nav === id);
   });
   currentScreen = id;
@@ -69,9 +89,17 @@ function startFarmeo() {
   farmeoState = Farmeo.fabricarEstado(coreoId);
   rondaActiva = true;
 
-  // Reseteamos HUD
+  // v1.2.2: HUD nuevo. Primero lo estático (fichas, dots), después lo vivo.
+  resetBandaPopEstado();
+  wireFarmeoUI();
+  pintarPanelVS();
+  pintarRondaDots();
   actualizarHudFarmeo({ puntajeTotal: 0, banda: null, poseNombre: '...' });
   pintarPoseFarmeo();
+  arrancarRelojesFarmeo();
+
+  // Reproductor: se monta con la pantalla y se pausa al salir.
+  if (window.MusicPlayer) MusicPlayer.montar();
 
   // Mostrar cámara
   errBox.classList.remove('hidden');
@@ -133,11 +161,12 @@ function startPoseDetection(video, canvas, poseChip) {
         ahora
       );
 
-      // Actualizar HUD en vivo
+      // Actualizar HUD en vivo (v1.2.2: también el medidor de aura)
       actualizarHudFarmeo({
         puntajeTotal: resultado.puntajeTotal || 0,
         banda: resultado.banda || null,
         poseNombre: resultado.poseNombre || '...',
+        aura: resultado.auraInstante,
         flags: resultado.flags || []
       });
 
@@ -161,44 +190,204 @@ function startPoseDetection(video, canvas, poseChip) {
   });
 }
 
-/* ---- Actualización del HUD (combo, score, próxima) ---- */
-function actualizarHudFarmeo({ puntajeTotal, banda, poseNombre, flags }) {
+/* ============================================================
+   v1.2.2 — HUD DEL FARMEO
+   Lógica PURA arriba (sin DOM, testeable con node), pintado abajo.
+   ============================================================ */
+
+/** Milisegundos → "mm:ss". Robusto ante NaN/negativos/valores enormes. */
+function formatearMMSS(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return '00:00';
+  const total = Math.ceil(n / 1000);
+  const min = Math.floor(total / 60);
+  const seg = total % 60;
+  return String(min).padStart(2, '0') + ':' + String(seg).padStart(2, '0');
+}
+
+/**
+ * Tiempo que le queda a la POSE actual (duración + gracia menos lo corrido).
+ * Antes del primer frame (inicioPaso_ms === null) devuelve el objetivo entero:
+ * el reloj arranca recién cuando el motor recibe el primer frame de cámara.
+ */
+function tiempoRestantePaso(estado, coreo, ahoraMs) {
+  if (!estado || !coreo || !Array.isArray(coreo.pasos)) return 0;
+  const i = estado.pasoActual;
+  if (i < 0 || i >= coreo.pasos.length) return 0;
+  const paso = coreo.pasos[i];
+  const objetivo = (paso.duracion_ms || 0) + (paso.gracia_ms || 0);
+  if (estado.inicioPaso_ms === null || estado.inicioPaso_ms === undefined) return objetivo;
+  return Math.max(0, objetivo - (ahoraMs - estado.inicioPaso_ms));
+}
+
+/** Tiempo que le queda a la RONDA entera: la pose actual + todas las que faltan. */
+function tiempoRestanteCoreo(estado, coreo, ahoraMs) {
+  if (!estado || !coreo || !Array.isArray(coreo.pasos)) return 0;
+  let total = tiempoRestantePaso(estado, coreo, ahoraMs);
+  for (let i = estado.pasoActual + 1; i < coreo.pasos.length; i++) {
+    total += (coreo.pasos[i].duracion_ms || 0) + (coreo.pasos[i].gracia_ms || 0);
+  }
+  return total;
+}
+
+/**
+ * Reparto de la barra de aura: qué porcentaje del ancho le toca al jugador.
+ * Con los dos en 0 (arranque del duelo) la barra queda al medio, no en 0/100.
+ */
+function porcentajeBarra(puntajeYo, puntajeRival) {
+  const a = Math.max(0, Number(puntajeYo) || 0);
+  const b = Math.max(0, Number(puntajeRival) || 0);
+  if (a + b === 0) return 50;
+  return Math.round((a / (a + b)) * 100);
+}
+
+/** Altura del medidor (0..100) a partir del aura instantánea (0..1). */
+function alturaMedidor(aura) {
+  const a = Number(aura);
+  if (!Number.isFinite(a)) return 0;
+  return Math.min(100, Math.max(0, a * 100));
+}
+
+/* ---- Actualización del HUD en vivo ---- */
+function actualizarHudFarmeo({ puntajeTotal, banda, poseNombre, aura, flags }) {
   const scoreEl = document.getElementById('hud-score');
   if (scoreEl) scoreEl.textContent = Math.round(puntajeTotal);
 
-  const comboEl = document.getElementById('hud-combo');
-  if (comboEl) {
-    // Usamos la banda para el color y el texto
-    const mult = banda === 'PERFECT' ? '×1.5' : banda === 'GOOD' ? '×1.2' : banda === 'OK' ? '×1.0' : '×0.5';
-    comboEl.textContent = `Combo ${mult}`;
-    comboEl.classList.toggle('badge--lose', banda === 'MISS');
-    comboEl.classList.toggle('badge--combo', banda !== 'MISS');
-  }
+  // Barra de proporción yo/rival
+  const barra = document.getElementById('vs-bar-yo');
+  if (barra) barra.style.width = porcentajeBarra(puntajeTotal, puntajeRivalActual()) + '%';
 
-  // Mostrar cartelito de banda (con histéresis)
+  // Medidor vertical: fill + aguja, coloreados por banda
+  pintarMedidor(aura, banda);
+
+  // Cartelito PERFECT/GOOD/OK/MISS (con histéresis)
   mostrarBandaPop(banda);
 
-  // Actualizar el nombre de la pose actual (si cambió)
-  const sub = document.querySelector('#screen-farmeo .screen__subtitle');
-  if (sub && farmeoState && coreoActual) {
-    const pasoIdx = farmeoState.pasoActual;
-    if (pasoIdx < coreoActual.pasos.length) {
-      const paso = coreoActual.pasos[pasoIdx];
-      const pose = Farmeo.POSES[paso.poseId];
-      sub.textContent = `Pose ${pasoIdx + 1} de ${coreoActual.pasos.length} · ${pose.nombre}`;
+  // Cabecera: "Pose 2 de 4 · 💪 DB (Doble Bíceps)"
+  const sub = document.getElementById('farmeo-sub');
+  const chip = document.getElementById('vf-chip-txt');
+  if (farmeoState && coreoActual) {
+    const idx = farmeoState.pasoActual;
+    if (idx < coreoActual.pasos.length) {
+      const pose = Farmeo.POSES[coreoActual.pasos[idx].poseId];
+      if (sub)  sub.textContent  = `Pose ${idx + 1} de ${coreoActual.pasos.length} · ${pose.emoji || ''} ${pose.nombre}`;
+      if (chip) chip.textContent = pose.nombre;
+    } else {
+      if (sub)  sub.textContent  = 'Ronda terminada';
+      if (chip) chip.textContent = 'FIN';
     }
   }
+}
 
-  // Mostrar próxima pose (o "fin")
-  const proxEl = document.getElementById('hud-proxima');
-  if (proxEl && farmeoState && coreoActual) {
-    const sigIdx = farmeoState.pasoActual + 1;
-    if (sigIdx < coreoActual.pasos.length) {
-      const sigPose = Farmeo.POSES[coreoActual.pasos[sigIdx].poseId];
-      proxEl.textContent = `Próx: ${sigPose.nombre}`;
+/** Pinta el medidor vertical de aura del viewfinder. */
+function pintarMedidor(aura, banda) {
+  const fill   = document.getElementById('medidor-fill');
+  const marker = document.getElementById('medidor-marker');
+  if (!fill && !marker) return;
+  const alto = alturaMedidor(aura);
+  if (fill) fill.style.height = alto + '%';
+  if (marker) {
+    marker.style.bottom = alto + '%';
+    const color = banda === 'PERFECT' ? 'var(--win)'
+                : banda === 'GOOD'    ? 'var(--win)'
+                : banda === 'OK'      ? 'var(--combo)'
+                : 'var(--lose)';
+    marker.style.background = color;
+  }
+}
+
+/** Puntaje del rival: el que ya jugó su turno, o 0 si todavía no jugó. */
+function puntajeRivalActual() {
+  if (!dueloState) return 0;
+  const yo = dueloState.turnoActual;
+  const otro = yo === 'A' ? 'B' : 'A';
+  return dueloState.jugadores[otro].puntaje ?? 0;
+}
+
+/** Fichas de los dos jugadores del panel VS (nombre, rango, nivel, foto). */
+function pintarPanelVS() {
+  if (!dueloState) return;
+  const yo   = dueloState.turnoActual;
+  const otro = yo === 'A' ? 'B' : 'A';
+  const nombreYo    = dueloState.jugadores[yo].nombre;
+  const nombreRival = dueloState.jugadores[otro].nombre;
+
+  const perfil = Store.obtenerPerfil();
+  const nivYo  = calcularNivel(perfil.puntajeTotal);
+  // Del rival solo conocemos lo de este duelo (no tenemos su perfil histórico).
+  const puntosRival = puntajeRivalActual();
+  const nivRival = calcularNivel(puntosRival);
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('vs-yo-nombre', nombreYo);
+  set('vs-yo-rango', nivYo.rango.toUpperCase());
+  set('vs-yo-nivel', 'NIVEL ' + nivYo.nivel);
+  set('vs-rival-nombre', nombreRival);
+  set('vs-rival-rango', puntosRival > 0 ? nivRival.rango.toUpperCase() : 'SIN MEDIR');
+  set('vs-rival-nivel', 'NIVEL ' + nivRival.nivel);
+  set('vs-score-rival', puntosRival);
+
+  // Foto: si hay sesión de Google usamos su avatar; si no, iniciales.
+  const fotoYo = document.getElementById('vs-yo-foto');
+  const usuario = (window.AuthService && AuthService.estaLogueado())
+    ? AuthService.usuarioActual() : null;
+  if (fotoYo) {
+    if (usuario && usuario.foto) {
+      fotoYo.style.backgroundImage = `url('${usuario.foto}')`;
+      fotoYo.textContent = '';
     } else {
-      proxEl.textContent = 'Última pose';
+      fotoYo.style.backgroundImage = '';
+      fotoYo.textContent = iniciales(nombreYo);
     }
+  }
+  const fotoRival = document.getElementById('vs-rival-foto');
+  if (fotoRival) fotoRival.textContent = iniciales(nombreRival);
+
+  const barra = document.getElementById('vs-bar-yo');
+  if (barra) barra.style.width = porcentajeBarra(0, puntosRival) + '%';
+}
+
+/** Dots de progreso de la ronda: uno por paso de la coreo. */
+function pintarRondaDots() {
+  const cont = document.getElementById('ronda-dots');
+  if (!cont || !coreoActual) return;
+  const total = coreoActual.pasos.length;
+  const actual = farmeoState ? farmeoState.pasoActual : 0;
+  cont.innerHTML = '';
+  for (let i = 0; i < total; i++) {
+    const d = document.createElement('span');
+    d.className = 'ronda-dot' + (i < actual ? ' ronda-dot--hecho' : i === actual ? ' ronda-dot--activo' : '');
+    cont.appendChild(d);
+  }
+  const lbl = document.getElementById('ronda-actual');
+  if (lbl) lbl.textContent = `${Math.min(actual + 1, total)} / ${total}`;
+}
+
+/* ---- Relojes en vivo (independientes del framerate de la cámara) ----
+   Van por setInterval y no por el loop de detección: si la cámara se
+   traba o el usuario tapa el lente, los relojes igual siguen andando. */
+let relojFarmeoId = null;
+
+function arrancarRelojesFarmeo() {
+  detenerRelojesFarmeo();
+  const pintar = () => {
+    if (!farmeoState || !coreoActual) return;
+    const ahora = performance.now();
+    const tPose  = tiempoRestantePaso(farmeoState, coreoActual, ahora);
+    const tRonda = tiempoRestanteCoreo(farmeoState, coreoActual, ahora);
+    const elPose  = document.getElementById('vs-timer');
+    const elRonda = document.getElementById('ronda-timer');
+    if (elPose)  elPose.textContent  = formatearMMSS(tPose);
+    if (elRonda) elRonda.textContent = formatearMMSS(tRonda);
+  };
+  pintar();
+  relojFarmeoId = setInterval(pintar, 250);
+}
+
+function detenerRelojesFarmeo() {
+  if (relojFarmeoId !== null) {
+    clearInterval(relojFarmeoId);
+    relojFarmeoId = null;
   }
 }
 
@@ -248,17 +437,120 @@ function mostrarBandaPop(banda) {
   pop.classList.add('show');
 }
 
-/* ---- Pintar la pose actual en el encuadre ---- */
+/* ---- Pintar la pose actual en la tarjeta MISIÓN ACTUAL ---- */
 function pintarPoseFarmeo() {
   if (!farmeoState || !coreoActual) return;
+  pintarRondaDots();
+
   const pasoIdx = farmeoState.pasoActual;
-  if (pasoIdx >= coreoActual.pasos.length) return;
-  const paso = coreoActual.pasos[pasoIdx];
-  const pose = Farmeo.POSES[paso.poseId];
-  const hint = document.querySelector('#screen-farmeo .encuadre-hint');
-  if (hint) {
-    hint.textContent = `${pose.emoji || '💪'} ${pose.nota || ''}`;
+  const emojiEl = document.getElementById('mision-emoji');
+  const txtEl   = document.getElementById('mision-texto');
+
+  // Coreo terminada: la misión pasa a estado de cierre en vez de quedar vieja.
+  if (pasoIdx >= coreoActual.pasos.length) {
+    if (emojiEl) emojiEl.textContent = '🏁';
+    if (txtEl)   txtEl.textContent = 'Ronda completa. Calculando aura...';
+    return;
   }
+
+  const pose = Farmeo.POSES[coreoActual.pasos[pasoIdx].poseId];
+  if (emojiEl) emojiEl.textContent = pose.emoji || '💪';
+  if (txtEl)   txtEl.textContent = pose.nota || pose.nombre;
+}
+
+/* ============================================================
+   v1.2.2 — CONTROLES DE LA PANTALLA (chat, menú, info, fullscreen)
+   Los tres paneles son DRAWERS dentro de #screen-farmeo: se abren
+   encima y NO navegan, así el duelo en curso no se corta.
+   ============================================================ */
+let farmeoUIWired = false;
+
+function abrirDrawer(id) {
+  const d = document.getElementById(id);
+  if (d) d.classList.remove('hidden');
+}
+function cerrarDrawer(id) {
+  const d = document.getElementById(id);
+  if (d) d.classList.add('hidden');
+}
+function cerrarTodosLosDrawers() {
+  ['chat-drawer', 'menu-drawer', 'info-drawer'].forEach(cerrarDrawer);
+}
+
+/** Detalle de cómo se puntúa la pose actual (lee el catálogo real). */
+function abrirInfoPose() {
+  cerrarDrawer('menu-drawer');
+  if (!farmeoState || !coreoActual) return;
+  const idx = farmeoState.pasoActual;
+  if (idx >= coreoActual.pasos.length) return;
+
+  const paso = coreoActual.pasos[idx];
+  const pose = Farmeo.POSES[paso.poseId];
+  const tit  = document.getElementById('info-titulo');
+  const txt  = document.getElementById('info-texto');
+  const lista= document.getElementById('info-lista');
+
+  if (tit) tit.textContent = `${pose.emoji || ''} ${pose.nombre}`;
+  if (txt) txt.textContent = pose.nota || '';
+  if (lista) {
+    const items = [];
+    const segs = ((paso.duracion_ms + paso.gracia_ms) / 1000).toFixed(1);
+    items.push(`Sostenerla ${segs}s (incluye ${(paso.gracia_ms / 1000).toFixed(1)}s de gracia para llegar).`);
+    if (Array.isArray(pose.angulos) && pose.angulos.length) {
+      items.push(`Se miden ${pose.angulos.length} ángulo(s) del cuerpo: ${pose.angulos.map(a => a.articulacion).join(', ')}.`);
+    }
+    if (pose.cara) {
+      items.push(`También se mide la cara (${pose.cara.blendshape}).`);
+    }
+    items.push('El puntaje es el área bajo la curva: no alcanza con clavarla un instante, hay que sostenerla.');
+    items.push('Romper el personaje (reírse de más, pestañear mucho, mirar a otro lado) resta aura.');
+    lista.innerHTML = items.map(t => `<li>${escaparHtml(t)}</li>`).join('');
+  }
+  abrirDrawer('info-drawer');
+}
+
+/** Engancha los controles una sola vez (la pantalla se muestra muchas veces). */
+function wireFarmeoUI() {
+  if (farmeoUIWired) return;
+  farmeoUIWired = true;
+
+  const on = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', fn);
+  };
+
+  on('btn-chat',        () => abrirDrawer('chat-drawer'));
+  on('chat-cerrar',     () => cerrarDrawer('chat-drawer'));
+  on('chat-cerrar-2',   () => cerrarDrawer('chat-drawer'));
+
+  on('btn-ronda-menu',  () => abrirDrawer('menu-drawer'));
+  on('menu-cerrar',     () => cerrarDrawer('menu-drawer'));
+
+  on('btn-mision-info', abrirInfoPose);
+  on('op-info-pose',    abrirInfoPose);
+  on('info-cerrar',     () => cerrarDrawer('info-drawer'));
+  on('info-cerrar-2',   () => cerrarDrawer('info-drawer'));
+
+  on('op-ranking',   () => { cerrarTodosLosDrawers(); showScreen('screen-ranking'); });
+  on('op-historial', () => { cerrarTodosLosDrawers(); showScreen('screen-historial'); });
+  on('op-abandonar', () => { cerrarTodosLosDrawers(); showScreen('screen-inicio'); });
+
+  // Fondo del drawer = cerrar (solo si se toca el fondo, no el panel).
+  ['chat-drawer', 'menu-drawer', 'info-drawer'].forEach(id => {
+    const d = document.getElementById(id);
+    if (d) d.addEventListener('click', (ev) => { if (ev.target === d) cerrarDrawer(id); });
+  });
+
+  // Pantalla completa del viewfinder. Si el navegador no lo permite, no rompe.
+  on('btn-fullscreen', () => {
+    const vf = document.getElementById('viewfinder');
+    if (!vf) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else if (vf.requestFullscreen) {
+      vf.requestFullscreen().catch(err => console.warn('Fullscreen no disponible:', err));
+    }
+  });
 }
 
 /* ---- Terminar la ronda actual ---- */
@@ -288,6 +580,13 @@ function stopFarmeo() {
   rondaActiva = false;
   if (window.VisionService) VisionService.stop();
   CameraService.stop();
+
+  // v1.2.2: apagar todo lo que la pantalla dejó vivo.
+  detenerRelojesFarmeo();
+  cerrarTodosLosDrawers();
+  if (window.MusicPlayer) MusicPlayer.pausar();
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+
   const video = document.getElementById('viewfinder-video');
   if (video) video.style.opacity = '0';
   // Limpiar estado para la próxima ronda
@@ -417,6 +716,31 @@ function pintarHome() {
   set('nivel-bar-label', prog.esMax
     ? '¡Nivel máximo alcanzado!'
     : `${prog.actual} / ${prog.meta} pts al siguiente nivel`);
+}
+
+/* ---- Tienda (v1.2.2, placeholder con las monedas reales) ---- */
+function pintarTienda() {
+  const el = document.getElementById('tienda-monedas');
+  if (el) el.textContent = '🪙 ' + calcularMonedas(Store.obtenerPerfil());
+}
+
+/* ---- Ajustes (v1.2.2). Preferencias en memoria: no se persisten todavía. ---- */
+function wireAjustes() {
+  const musica    = document.getElementById('set-musica');
+  const bandas    = document.getElementById('set-bandas');
+  const esqueleto = document.getElementById('set-esqueleto');
+
+  musica?.addEventListener('change', () => {
+    if (window.MusicPlayer) MusicPlayer.setHabilitado(musica.checked);
+  });
+  bandas?.addEventListener('change', () => {
+    const pop = document.getElementById('banda-pop');
+    if (pop) pop.style.display = bandas.checked ? '' : 'none';
+  });
+  esqueleto?.addEventListener('change', () => {
+    const canvas = document.getElementById('viewfinder-canvas');
+    if (canvas) canvas.style.opacity = esqueleto.checked ? '1' : '0';
+  });
 }
 
 function pintarRanking() {
@@ -637,11 +961,13 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('beforeunload', () => {
     if (window.VisionService) VisionService.stop();
     CameraService.stop();
+    if (window.MusicPlayer) MusicPlayer.detener();
     OnlineService.salir().catch(() => {});
   });
 
   wirePerfil();
   wireAuth();
+  wireAjustes();
 
   if (Store.nombreEsDefault()) {
     showScreen('screen-onboarding');

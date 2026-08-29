@@ -1,8 +1,25 @@
 <!DOCTYPE html>
+<!-- ============================================================
+     AURA FARMER — index.html
+     v1.2.2-web — MEGA UPDATE VISUAL (pantalla FARMEO rediseñada)
+       · Topbar con marca AF + título FARMEO + pose actual
+       · Tarjeta "MISIÓN ACTUAL" con hexágono de pose, info y Chat
+       · Viewfinder con medidor vertical PERFECT/GOOD/MISS,
+         chip de pose y botón de pantalla completa
+       · Panel VS: dos fichas de jugador enfrentadas, temporizador,
+         marcador doble y barra de proporción de aura
+       · Barra de ronda (dots + tiempo restante) con menú "..."
+       · Reproductor de música (maquetado + player.js, listo para
+         cargar pistas y fondos reales)
+       · Bottom-nav nuevo de 5 slots con botón central de cámara
+       · Pantallas nuevas: Tienda y Ajustes (placeholder)
+     v1.0-web — versión previa (9 pantallas, HUD simple)
+     ============================================================ -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0B0B10">
 <title>Aura Farmer</title>
 <base href="/aura-farmer/">
 <link rel="stylesheet" href="style.css">
@@ -12,6 +29,22 @@
 <!-- ============ SPRITE DE ICONOS (línea, monocromáticos) ============ -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    <!-- Gradiente de marca: cian → aura. Lo usa el logo AF. -->
+    <linearGradient id="grad-af" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#22D3EE"/>
+      <stop offset="55%"  stop-color="#7C5CFF"/>
+      <stop offset="100%" stop-color="#B978FF"/>
+    </linearGradient>
+
+    <!-- Logo AF. Se dibuja con la tipografía Unbounded ya cargada por el CSS;
+         textLength lo encaja siempre dentro del viewBox aunque falle la fuente.
+         Para reemplazarlo por un logo propio: cambiar SOLO este symbol. -->
+    <symbol id="logo-af" viewBox="0 0 64 44">
+      <text x="1" y="35" textLength="62" lengthAdjust="spacingAndGlyphs"
+            font-family="Unbounded, Segoe UI, sans-serif" font-weight="900"
+            font-size="38" font-style="italic" fill="url(#grad-af)">AF</text>
+    </symbol>
+
     <symbol id="ic-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/>
     </symbol>
@@ -29,6 +62,54 @@
     </symbol>
     <symbol id="ic-scroll" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M6 3h11a2 2 0 0 1 2 2v13a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5"/><path d="M4 5a2 2 0 0 1 4 0v2H4z"/><path d="M9 8h7M9 12h7M9 16h4"/>
+    </symbol>
+
+    <!-- ---- v1.2.2: iconos del mega update ---- -->
+    <symbol id="ic-swords" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 3h4l11 11-4 4L3 7V3z"/><path d="M21 3h-4L6 14l4 4L21 7V3z"/><path d="m14 14 3 3M10 14l-3 3"/>
+    </symbol>
+    <symbol id="ic-bag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 8h16l-1.2 12H5.2L4 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>
+    </symbol>
+    <symbol id="ic-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3.2"/>
+      <path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9 5.3 5.3"/>
+    </symbol>
+    <symbol id="ic-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12a8 8 0 0 1-8 8H8l-4 3 1-4.4A8 8 0 1 1 21 12z"/>
+    </symbol>
+    <symbol id="ic-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.8" r="1" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="ic-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>
+    </symbol>
+    <symbol id="ic-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M3 10v4M7 6v12M11 9v6M15 4v16M19 10v4"/>
+    </symbol>
+    <symbol id="ic-play" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M7 4.5v15l13-7.5-13-7.5z"/>
+    </symbol>
+    <symbol id="ic-pause" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/>
+    </symbol>
+    <symbol id="ic-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19.5 6a9 9 0 0 1 0 12"/>
+    </symbol>
+    <symbol id="ic-vol-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="m17 9 5 6M22 9l-5 6"/>
+    </symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M6 6l12 12M18 6 6 18"/>
+    </symbol>
+    <symbol id="ic-dots" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/>
+    </symbol>
+    <symbol id="ic-cam-solid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 8h3.5L8 5.5h8L17.5 8H21v12H3V8z"/><circle cx="12" cy="13.5" r="3.6"/>
+    </symbol>
+    <symbol id="ic-music" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>
     </symbol>
   </defs>
 </svg>
@@ -105,6 +186,12 @@
     </div>
 
     <button class="btn btn--secondary btn--block mt-16" id="btn-editar-perfil">Editar perfil</button>
+
+    <!-- v1.2.2: accesos a Ranking / Historial (ya no viven en el bottom-nav) -->
+    <div class="row mt-16" style="gap:10px;">
+      <button class="btn btn--secondary" style="flex:1;" data-nav="screen-ranking"><svg class="ic"><use href="#ic-trophy"/></svg> Ranking</button>
+      <button class="btn btn--secondary" style="flex:1;" data-nav="screen-historial"><svg class="ic"><use href="#ic-scroll"/></svg> Historial</button>
+    </div>
 
     <!-- Sesión Google (Entrega B): un solo botón que cambia según estado -->
     <div class="card mt-16" id="auth-card">
@@ -237,31 +324,197 @@
     </div>
   </section>
 
-  <!-- ============ FARMEO (cámara) ============ -->
-  <section id="screen-farmeo" class="screen hidden">
-    <h2 class="screen__title">Farmeo</h2>
-    <p class="screen__subtitle">Pose 1 de 3 · ...</p>
-    <p class="encuadre-hint">📐 Encuadre: cara, torso y brazos · sentate a ~1m de la cámara</p>
+  <!-- ============================================================
+       FARMEO (cámara) — v1.2.2 MEGA UPDATE
+       ============================================================ -->
+  <section id="screen-farmeo" class="screen screen--farmeo hidden">
 
-    <div class="viewfinder">
+    <!-- ---- 1. Topbar: título + marca ---- -->
+    <header class="fm-topbar">
+      <div>
+        <h2 class="fm-title">FARMEO</h2>
+        <p class="fm-sub" id="farmeo-sub">Preparando ronda…</p>
+      </div>
+      <div class="fm-brand">
+        <svg class="fm-brand__mark" viewBox="0 0 64 44" aria-hidden="true"><use href="#logo-af"/></svg>
+        <span class="fm-brand__txt">AURA<br>FARMER</span>
+      </div>
+    </header>
+
+    <!-- ---- 2. Misión actual ---- -->
+    <div class="mision">
+      <div class="mision__hex" id="mision-emoji">💪</div>
+      <div class="mision__body">
+        <span class="mision__label">MISIÓN ACTUAL</span>
+        <p class="mision__txt" id="mision-texto">Encuadrate: cara, torso y brazos, a ~1m de la cámara</p>
+      </div>
+      <button class="mision__info" id="btn-mision-info" aria-label="Detalle de la pose">
+        <svg class="ic"><use href="#ic-info"/></svg>
+      </button>
+      <button class="btn-chat" id="btn-chat">
+        Chat <svg class="ic"><use href="#ic-chat"/></svg>
+      </button>
+    </div>
+
+    <!-- ---- 3. Viewfinder + medidor ---- -->
+    <div class="viewfinder" id="viewfinder">
       <video id="viewfinder-video" autoplay playsinline muted></video>
       <canvas id="viewfinder-canvas"></canvas>
-      <div id="pose-status" class="pose-status hidden">🧠 cargando IA...</div>
+
+      <!-- Medidor vertical de aura en vivo (PERFECT arriba, MISS abajo) -->
+      <div class="medidor" id="medidor" aria-hidden="true">
+        <span class="medidor__lbl medidor__lbl--perfect">PERFECT</span>
+        <span class="medidor__lbl medidor__lbl--good">GOOD</span>
+        <span class="medidor__lbl medidor__lbl--miss">MISS</span>
+        <div class="medidor__track">
+          <div class="medidor__fill" id="medidor-fill"></div>
+          <div class="medidor__marker" id="medidor-marker"></div>
+        </div>
+      </div>
+
+      <!-- Chip con el nombre de la pose que se está midiendo -->
+      <div class="vf-chip" id="vf-chip">
+        <svg class="ic"><use href="#ic-wave"/></svg>
+        <span id="vf-chip-txt">POSE</span>
+      </div>
+
+      <!-- Pantalla completa del viewfinder -->
+      <button class="vf-expand" id="btn-fullscreen" aria-label="Pantalla completa">
+        <svg class="ic"><use href="#ic-expand"/></svg>
+      </button>
+
+      <div id="pose-status" class="pose-status hidden">cargando IA...</div>
       <div id="banda-pop" class="banda-pop"></div>
       <div id="viewfinder-error" class="viewfinder__error hidden">
-        <span class="viewfinder__error-icon">📷</span>
+        <span class="viewfinder__error-icon">
+          <svg class="ic" style="width:36px;height:36px;"><use href="#ic-cam"/></svg>
+        </span>
         <p id="viewfinder-error-msg">Iniciando cámara...</p>
       </div>
     </div>
 
-    <div class="hud">
-      <span id="hud-combo" class="badge badge--combo">Combo ×1.0</span>
-      <span id="hud-score" class="stat stat--lg">0</span>
-      <span id="hud-proxima" class="badge">Próx: ...</span>
+    <!-- ---- 4. Panel VS ---- -->
+    <div class="vs-panel">
+      <article class="pcard pcard--yo">
+        <div class="pcard__foto" id="vs-yo-foto">MX</div>
+        <div class="pcard__nombre" id="vs-yo-nombre">Vos</div>
+        <div class="pcard__rango" id="vs-yo-rango">INICIADO</div>
+        <span class="pcard__nivel" id="vs-yo-nivel">NIVEL 1</span>
+      </article>
+
+      <div class="vs-center">
+        <div class="vs-timer" id="vs-timer">00:00</div>
+        <div class="vs-mark" aria-hidden="true">VS</div>
+        <div class="vs-scores">
+          <span class="vs-score vs-score--yo stat" id="hud-score">0</span>
+          <span class="vs-score vs-score--rival stat" id="vs-score-rival">0</span>
+        </div>
+        <div class="vs-bar">
+          <div class="vs-bar__yo" id="vs-bar-yo" style="width:50%"></div>
+        </div>
+      </div>
+
+      <article class="pcard pcard--rival">
+        <div class="pcard__foto" id="vs-rival-foto">?</div>
+        <div class="pcard__nombre" id="vs-rival-nombre">Rival</div>
+        <div class="pcard__rango" id="vs-rival-rango">—</div>
+        <span class="pcard__nivel" id="vs-rival-nivel">NIVEL 1</span>
+      </article>
     </div>
 
-    <!-- Botón de terminar ronda (demo) ya no es necesario pero se mantiene -->
-    <button class="btn btn--secondary btn--block mt-24" data-nav="screen-veredicto">Terminar ronda (demo)</button>
+    <!-- ---- 5. Barra de ronda ---- -->
+    <div class="ronda-row">
+      <div class="ronda-bar">
+        <div class="ronda-bar__col">
+          <span class="ronda-bar__label">RONDA ACTUAL</span>
+          <span class="ronda-bar__val" id="ronda-actual">1 / 4</span>
+        </div>
+        <div class="ronda-dots" id="ronda-dots"></div>
+        <div class="ronda-bar__col ronda-bar__col--right">
+          <span class="ronda-bar__label">TERMINA LA RONDA EN</span>
+          <span class="ronda-bar__val ronda-bar__val--time" id="ronda-timer">00:00</span>
+        </div>
+      </div>
+      <button class="ronda-menu" id="btn-ronda-menu" aria-label="Más opciones">
+        <svg class="ic"><use href="#ic-dots"/></svg>
+      </button>
+    </div>
+
+    <!-- ---- 6. Reproductor (aura booster) ---- -->
+    <section class="player" id="player">
+      <div class="player__bg" id="player-bg"></div>
+      <div class="player__grid">
+        <div class="player__info">
+          <h3 class="player__title" id="player-title">SIN PISTA CARGADA</h3>
+          <p class="player__meta" id="player-meta">Poné tus temas en /music</p>
+          <div class="player__by">
+            <span class="player__by-av" id="player-by-av"><svg class="ic"><use href="#ic-music"/></svg></span>
+            <span id="player-by">by We Do</span>
+          </div>
+          <!-- Icono de fuente de audio. Deliberadamente NO usamos el logo de
+               Spotify (marca de terceros): las pistas son propias. -->
+          <div class="player__actions">
+            <span class="player__fuente"><svg class="ic"><use href="#ic-wave"/></svg></span>
+            <button class="btn-follow" id="btn-follow">FOLLOW</button>
+          </div>
+        </div>
+        <div class="player__art" id="player-art">
+          <span class="player__word">AURA</span>
+          <span class="player__tag" id="player-tag">PHONK ENERGY</span>
+          <span class="player__booster">AURA BOOSTER</span>
+          <div class="player__boost"><i id="player-boost-fill"></i></div>
+        </div>
+      </div>
+      <div class="player__bar">
+        <button class="player__btn" id="player-play" aria-label="Reproducir">
+          <svg class="ic"><use href="#ic-play"/></svg>
+        </button>
+        <span class="player__time" id="player-time">00:00 / 00:00</span>
+        <div class="player__track" id="player-track">
+          <div class="player__prog" id="player-prog"></div>
+        </div>
+        <button class="player__btn" id="player-vol" aria-label="Silenciar">
+          <svg class="ic"><use href="#ic-vol"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- ---- Overlays de la pantalla (no navegan: no cortan el duelo) ---- -->
+    <div class="drawer hidden" id="chat-drawer">
+      <div class="drawer__panel">
+        <div class="drawer__head">
+          <h3 class="drawer__title">Chat del duelo</h3>
+          <button class="drawer__x" id="chat-cerrar" aria-label="Cerrar"><svg class="ic"><use href="#ic-x"/></svg></button>
+        </div>
+        <p class="drawer__txt">Todavía no está desarrollado. Acá va a ir el chat en vivo con tu rival durante la batalla.</p>
+        <button class="btn btn--secondary btn--block" id="chat-cerrar-2">Volver al duelo</button>
+      </div>
+    </div>
+
+    <div class="drawer hidden" id="menu-drawer">
+      <div class="drawer__panel">
+        <div class="drawer__head">
+          <h3 class="drawer__title">Opciones</h3>
+          <button class="drawer__x" id="menu-cerrar" aria-label="Cerrar"><svg class="ic"><use href="#ic-x"/></svg></button>
+        </div>
+        <button class="drawer__op" id="op-info-pose"><svg class="ic"><use href="#ic-info"/></svg> Cómo se puntúa esta pose</button>
+        <button class="drawer__op" id="op-ranking"><svg class="ic"><use href="#ic-trophy"/></svg> Ver ranking</button>
+        <button class="drawer__op" id="op-historial"><svg class="ic"><use href="#ic-scroll"/></svg> Ver historial</button>
+        <button class="drawer__op drawer__op--danger" id="op-abandonar"><svg class="ic"><use href="#ic-x"/></svg> Abandonar duelo</button>
+      </div>
+    </div>
+
+    <div class="drawer hidden" id="info-drawer">
+      <div class="drawer__panel">
+        <div class="drawer__head">
+          <h3 class="drawer__title" id="info-titulo">Pose</h3>
+          <button class="drawer__x" id="info-cerrar" aria-label="Cerrar"><svg class="ic"><use href="#ic-x"/></svg></button>
+        </div>
+        <p class="drawer__txt" id="info-texto"></p>
+        <ul class="drawer__list" id="info-lista"></ul>
+        <button class="btn btn--secondary btn--block" id="info-cerrar-2">Entendido</button>
+      </div>
+    </div>
   </section>
 
   <!-- ============ VEREDICTO ============ -->
@@ -319,19 +572,59 @@
     <div class="card"></div>
   </section>
 
-  <!-- ============ BOTTOM NAV ============ -->
+  <!-- ============ TIENDA (placeholder v1.2.2) ============ -->
+  <section id="screen-tienda" class="screen hidden">
+    <h2 class="screen__title">Tienda</h2>
+    <p class="screen__subtitle">Gastá tus monedas de aura</p>
+    <div class="card placeholder">
+      <svg class="ic placeholder__ic"><use href="#ic-bag"/></svg>
+      <p class="placeholder__txt">Acá van a estar los marcos de perfil, los efectos de aura y los packs de poses.</p>
+      <p class="placeholder__sub">Tus monedas: <span class="stat" id="tienda-monedas">0</span></p>
+    </div>
+  </section>
+
+  <!-- ============ AJUSTES (placeholder v1.2.2) ============ -->
+  <section id="screen-ajustes" class="screen hidden">
+    <h2 class="screen__title">Ajustes</h2>
+    <p class="screen__subtitle">Preferencias del juego</p>
+    <div class="card">
+      <label class="switch-row">
+        <span>Música durante el duelo</span>
+        <input type="checkbox" id="set-musica" checked>
+      </label>
+      <label class="switch-row">
+        <span>Cartelitos PERFECT / MISS</span>
+        <input type="checkbox" id="set-bandas" checked>
+      </label>
+      <label class="switch-row">
+        <span>Esqueleto sobre la cámara</span>
+        <input type="checkbox" id="set-esqueleto" checked>
+      </label>
+    </div>
+    <div class="card mt-16">
+      <div class="row row--between">
+        <span style="color:var(--text-muted); font-size:13px;">Versión</span>
+        <span class="stat" style="font-size:13px;">v1.2.2-web</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BOTTOM NAV (v1.2.2: 5 slots + cámara central) ============ -->
   <nav class="bottom-nav" id="bottom-nav">
-    <button class="bottom-nav__item active" data-nav="screen-inicio">
-      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-home"/></svg></span>Inicio
-    </button>
-    <button class="bottom-nav__item" data-nav="screen-ranking">
-      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-trophy"/></svg></span>Ranking
-    </button>
-    <button class="bottom-nav__item" data-nav="screen-historial">
-      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-scroll"/></svg></span>Historial
+    <button class="bottom-nav__item" data-nav="screen-matchmaking">
+      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-swords"/></svg></span>DUELO
     </button>
     <button class="bottom-nav__item" data-nav="screen-home">
-      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-user"/></svg></span>Perfil
+      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-user"/></svg></span>MI PERFIL
+    </button>
+    <button class="bottom-nav__cam" data-nav="screen-farmeo" aria-label="Farmear">
+      <svg class="ic"><use href="#ic-cam-solid"/></svg>
+    </button>
+    <button class="bottom-nav__item" data-nav="screen-tienda">
+      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-bag"/></svg></span>TIENDA
+    </button>
+    <button class="bottom-nav__item" data-nav="screen-ajustes">
+      <span class="bottom-nav__icon"><svg class="ic"><use href="#ic-gear"/></svg></span>AJUSTES
     </button>
   </nav>
 
@@ -342,7 +635,8 @@
 <script src="poses.js"></script>
 <script src="duelo.js"></script>
 <script src="score.js"></script>
-<script src="farmeo.js"></script>   <!-- ← NUEVO: motor principal -->
+<script src="farmeo.js"></script>
+<script src="player.js"></script>
 <!-- Firebase SDK (CDN modular → expuesto en window.__FIREBASE__ para online.js/auth.js) -->
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';

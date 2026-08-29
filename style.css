@@ -1,6 +1,12 @@
 /* ============================================================
    AURA FARMER — style.css
-   v0.1-web — estructura base, sin lógica de juego
+   v1.2.2-web — MEGA UPDATE VISUAL: pantalla de farmeo rediseñada
+     (topbar+marca, misión, medidor de aura, panel VS, barra de
+     ronda, reproductor, drawers) + bottom-nav de 5 slots con
+     botón central de cámara. Todo el bloque nuevo está al FINAL
+     del archivo, aislado y comentado.
+   v0.12-web — login Google, perfil rediseñado, cartelitos de banda
+   v0.1-web  — estructura base, sin lógica de juego
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
@@ -593,4 +599,753 @@ body{
 }
 @media (prefers-reduced-motion: reduce){
   .banda-pop.show{ animation:none; opacity:0; }
+}
+
+/* ============================================================
+   v1.2.2-web — MEGA UPDATE VISUAL · PANTALLA FARMEO
+   ------------------------------------------------------------
+   Bloque autocontenido: todo lo nuevo vive acá abajo y, por orden
+   de cascada, pisa lo anterior donde hace falta (bottom-nav,
+   viewfinder). Nada de lo viejo se borró: si hay que volver
+   atrás, alcanza con comentar este bloque.
+   ============================================================ */
+
+:root{
+  --rival:      #F5A623;   /* naranja del rival (contraste con el aura violeta) */
+  --rival-glow: #FFC46B;
+  --cyan:       #22D3EE;   /* acento de marca, solo en el logo */
+  --nav-h:      86px;      /* nav más alto: ahora lleva botón central */
+}
+
+/* ---------- Pantalla farmeo: más aire vertical, menos padding ---------- */
+.screen--farmeo{
+  padding:16px 14px calc(var(--nav-h) + 20px);
+  gap:12px;
+}
+
+/* ---------- 1. Topbar ---------- */
+.fm-topbar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+.fm-title{
+  font-family:var(--f-display);
+  font-weight:900;
+  font-style:italic;
+  font-size:30px;
+  line-height:1;
+  letter-spacing:-0.5px;
+}
+.fm-sub{
+  font-size:13px;
+  color:var(--text-muted);
+  margin-top:6px;
+}
+.fm-brand{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-shrink:0;
+}
+.fm-brand__mark{
+  width:42px; height:30px;
+  filter:drop-shadow(0 0 10px rgba(142,68,255,0.45));
+}
+.fm-brand__txt{
+  font-family:var(--f-display);
+  font-weight:700;
+  font-size:12px;
+  line-height:1.15;
+  letter-spacing:0.5px;
+}
+
+/* ---------- 2. Misión actual ---------- */
+.mision{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:10px 12px;
+  border-radius:var(--radius);
+  background:linear-gradient(135deg, rgba(142,68,255,0.10), rgba(22,22,31,0.9));
+  border:1px solid var(--aura-dim);
+}
+/* Hexágono con el emoji de la pose. clip-path evita cargar un asset. */
+.mision__hex{
+  width:52px; height:58px;
+  flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:26px;
+  background:linear-gradient(160deg, #2A1B4D, #1A1230);
+  border:1px solid var(--aura);
+  clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.mision__body{ flex:1; min-width:0; }
+.mision__label{
+  display:block;
+  font-family:var(--f-mono);
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:1.2px;
+  color:var(--aura-glow);
+  margin-bottom:3px;
+}
+.mision__txt{
+  font-size:13.5px;
+  line-height:1.3;
+  font-weight:600;
+}
+.mision__info{
+  flex-shrink:0;
+  width:26px; height:26px;
+  border-radius:50%;
+  background:transparent;
+  border:1px solid var(--border);
+  color:var(--text-muted);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+.mision__info:hover{ color:var(--aura-glow); border-color:var(--aura); }
+.mision__info .ic{ width:15px; height:15px; }
+
+.btn-chat{
+  flex-shrink:0;
+  display:flex; align-items:center; gap:6px;
+  padding:9px 14px;
+  border-radius:999px;
+  background:rgba(142,68,255,0.08);
+  border:1px solid var(--aura);
+  color:var(--text);
+  font-family:var(--f-body);
+  font-weight:600; font-size:13px;
+  cursor:pointer;
+  transition:background .15s ease;
+}
+.btn-chat:hover{ background:rgba(142,68,255,0.2); }
+.btn-chat .ic{ width:15px; height:15px; }
+
+/* ---------- 3. Viewfinder ---------- */
+.viewfinder{
+  aspect-ratio:380/420;
+  max-height:none;
+  border:1px solid var(--aura-dim);
+  box-shadow:0 0 28px rgba(142,68,255,0.12) inset;
+}
+
+/* Medidor vertical de aura en vivo */
+.medidor{
+  position:absolute;
+  left:0; top:22%;
+  height:56%;
+  width:74px;
+  z-index:4;
+  background:rgba(6,6,10,0.72);
+  border-radius:0 8px 8px 0;
+  padding:8px 8px 8px 6px;
+  backdrop-filter:blur(3px);
+  pointer-events:none;
+}
+.medidor__lbl{
+  position:absolute;
+  left:8px;
+  font-family:var(--f-display);
+  font-weight:700;
+  font-size:10px;
+  letter-spacing:0.5px;
+}
+.medidor__lbl--perfect{ top:4px;  color:var(--win); }
+.medidor__lbl--good{    top:47%;  color:var(--combo); }
+.medidor__lbl--miss{    bottom:4px; color:var(--lose); }
+
+.medidor__track{
+  position:absolute;
+  left:50px; top:20px; bottom:20px;
+  width:7px;
+  border-radius:99px;
+  background:linear-gradient(180deg,
+    rgba(46,216,167,0.18) 0%,
+    rgba(255,200,87,0.18) 50%,
+    rgba(255,92,122,0.18) 100%);
+  overflow:hidden;
+}
+.medidor__fill{
+  position:absolute;
+  left:0; right:0; bottom:0;
+  height:0%;
+  border-radius:99px;
+  background:linear-gradient(180deg, var(--win) 0%, var(--combo) 55%, var(--lose) 100%);
+  transition:height .12s linear;
+}
+/* Aguja: marca el valor instantáneo, se mueve más rápido que el fill. */
+.medidor__marker{
+  position:absolute;
+  left:44px;
+  width:16px; height:3px;
+  border-radius:2px;
+  background:var(--lose);
+  bottom:0;
+  transition:bottom .1s linear, background .2s ease;
+  box-shadow:0 0 8px currentColor;
+}
+
+/* Chip de pose (abajo izquierda) */
+.vf-chip{
+  position:absolute;
+  left:12px; bottom:12px;
+  z-index:4;
+  display:flex; align-items:center; gap:7px;
+  padding:8px 14px;
+  border-radius:999px;
+  background:rgba(11,11,16,0.7);
+  border:1px solid rgba(255,255,255,0.08);
+  backdrop-filter:blur(6px);
+  font-family:var(--f-display);
+  font-weight:700; font-size:11px;
+  letter-spacing:0.8px;
+  text-transform:uppercase;
+}
+.vf-chip .ic{ width:15px; height:15px; color:var(--aura-glow); }
+
+.vf-expand{
+  position:absolute;
+  right:12px; bottom:12px;
+  z-index:4;
+  width:40px; height:40px;
+  border-radius:12px;
+  background:rgba(11,11,16,0.7);
+  border:1px solid rgba(255,255,255,0.08);
+  backdrop-filter:blur(6px);
+  color:var(--text);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+.vf-expand:hover{ border-color:var(--aura); color:var(--aura-glow); }
+.vf-expand .ic{ width:18px; height:18px; }
+
+/* En pantalla completa el video tapa todo pero el HUD sigue arriba */
+.viewfinder:fullscreen{ border-radius:0; aspect-ratio:auto; height:100%; width:100%; }
+
+/* ---------- 4. Panel VS ---------- */
+.vs-panel{
+  display:grid;
+  grid-template-columns:1fr 1.15fr 1fr;
+  gap:8px;
+  align-items:start;
+}
+
+.pcard{
+  position:relative;
+  border-radius:16px;
+  padding:10px 8px 12px;
+  text-align:center;
+  background:linear-gradient(180deg, #14101F 0%, #0E0C16 100%);
+  border:1.5px solid var(--aura);
+  box-shadow:0 0 18px rgba(142,68,255,0.25);
+  overflow:hidden;
+}
+.pcard--rival{
+  border-color:var(--rival);
+  background:linear-gradient(180deg, #1E1408 0%, #120E0A 100%);
+  box-shadow:0 0 18px rgba(245,166,35,0.22);
+}
+.pcard__foto{
+  width:100%;
+  aspect-ratio:1/1;
+  max-height:96px;
+  border-radius:12px;
+  background:var(--surface-2);
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--f-display);
+  font-weight:700; font-size:26px;
+  color:var(--aura-glow);
+  background-size:cover;
+  background-position:center;
+  margin-bottom:8px;
+}
+.pcard--rival .pcard__foto{ color:var(--rival-glow); }
+.pcard__nombre{
+  font-family:var(--f-display);
+  font-weight:700; font-size:16px;
+  line-height:1.1;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.pcard__rango{
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:0.6px;
+  text-transform:uppercase;
+  color:var(--aura-glow);
+  margin-top:3px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.pcard--rival .pcard__rango{ color:var(--rival-glow); }
+.pcard__nivel{
+  display:inline-block;
+  margin-top:7px;
+  padding:3px 10px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.10);
+  font-family:var(--f-mono);
+  font-size:9.5px; font-weight:600;
+  letter-spacing:0.5px;
+}
+
+/* Columna central: timer + VS + marcador + barra */
+.vs-center{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  padding-top:2px;
+}
+.vs-timer{
+  font-family:var(--f-mono);
+  font-size:15px; font-weight:600;
+  padding:7px 16px;
+  border-radius:12px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  letter-spacing:1px;
+}
+/* "VS": por ahora tipográfico. Para cambiarlo por un sprite propio,
+   reemplazar el contenido de .vs-mark por un <svg><use href="#logo-vs"/>. */
+.vs-mark{
+  font-family:var(--f-display);
+  font-weight:900; font-style:italic;
+  font-size:30px;
+  line-height:1;
+  letter-spacing:-1px;
+  color:#fff;
+  text-shadow:0 0 18px rgba(255,255,255,0.35), 0 0 34px rgba(142,68,255,0.5);
+  margin:2px 0;
+}
+.vs-scores{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  width:100%;
+  gap:8px;
+}
+.vs-score{
+  font-size:30px;
+  font-weight:600;
+  line-height:1;
+  transition:transform .15s ease, color .15s ease;
+}
+.vs-score--yo{    color:var(--aura-glow); }
+.vs-score--rival{ color:var(--rival); }
+.vs-bar{
+  width:100%;
+  height:9px;
+  border-radius:99px;
+  overflow:hidden;
+  background:var(--rival);       /* el resto de la barra es del rival */
+}
+.vs-bar__yo{
+  height:100%;
+  width:50%;
+  background:linear-gradient(90deg, var(--aura), var(--aura-glow));
+  transition:width .5s cubic-bezier(.4,0,.2,1);
+}
+/* Pulso del marcador propio en cada keyframe (reusa la clase vieja) */
+.hud-score--pam{ transform:scale(1.25); color:#fff; }
+
+/* ---------- 5. Barra de ronda ---------- */
+.ronda-row{
+  display:flex;
+  align-items:stretch;
+  gap:8px;
+}
+.ronda-bar{
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:10px 14px;
+  border-radius:16px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  min-width:0;
+}
+.ronda-bar__col{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.ronda-bar__col--right{ text-align:right; align-items:flex-end; }
+.ronda-bar__label{
+  font-size:9px;
+  letter-spacing:0.8px;
+  text-transform:uppercase;
+  color:var(--text-muted);
+  white-space:nowrap;
+}
+.ronda-bar__val{
+  font-family:var(--f-mono);
+  font-size:17px; font-weight:600;
+}
+.ronda-bar__val--time{ color:var(--aura-glow); }
+
+.ronda-dots{ display:flex; gap:7px; flex-shrink:0; }
+.ronda-dot{
+  width:11px; height:11px;
+  border-radius:50%;
+  border:1.5px solid var(--aura-dim);
+  background:transparent;
+  transition:background .3s ease, box-shadow .3s ease;
+}
+.ronda-dot--hecho{ background:var(--aura-dim); border-color:var(--aura-dim); }
+.ronda-dot--activo{
+  background:var(--aura);
+  border-color:var(--aura-glow);
+  box-shadow:0 0 10px var(--aura);
+}
+
+.ronda-menu{
+  flex-shrink:0;
+  width:62px;
+  border-radius:16px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  color:var(--text-muted);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+.ronda-menu:hover{ color:var(--text); border-color:var(--aura); }
+.ronda-menu .ic{ width:22px; height:22px; }
+
+/* ---------- 6. Reproductor ---------- */
+.player{
+  position:relative;
+  border-radius:18px;
+  overflow:hidden;
+  border:1px solid rgba(245,166,35,0.35);
+  background:#120A0A;
+}
+/* Fondo: acá entra la imagen o el <video> que suba Maxi (player.js lo setea). */
+.player__bg{
+  position:absolute; inset:0;
+  background-size:cover;
+  background-position:center;
+  opacity:0.55;
+  z-index:0;
+}
+.player::after{
+  content:'';
+  position:absolute; inset:0;
+  background:linear-gradient(90deg, rgba(10,6,8,0.96) 0%, rgba(10,6,8,0.70) 45%, rgba(10,6,8,0.25) 100%);
+  z-index:1;
+  pointer-events:none;
+}
+.player__grid{
+  position:relative;
+  z-index:2;
+  display:grid;
+  grid-template-columns:1.05fr 1fr;
+  gap:8px;
+  padding:12px 14px 6px;
+  min-height:110px;
+}
+.player__title{
+  font-family:var(--f-display);
+  font-weight:700; font-size:13px;
+  line-height:1.25;
+  letter-spacing:0.2px;
+  /* player.js manda "titulo\nsubtitulo" en un solo textContent */
+  white-space:pre-line;
+}
+.player__meta{
+  font-size:10.5px;
+  color:var(--text-muted);
+  margin-top:4px;
+}
+.player__by{
+  display:flex; align-items:center; gap:6px;
+  margin-top:8px;
+  font-size:10px;
+  color:var(--text-muted);
+}
+.player__by-av{
+  width:18px; height:18px;
+  border-radius:4px;
+  background:var(--surface-2);
+  display:flex; align-items:center; justify-content:center;
+}
+.player__by-av .ic{ width:11px; height:11px; color:var(--aura-glow); }
+.player__actions{
+  display:flex; align-items:center; gap:10px;
+  margin-top:10px;
+}
+.player__fuente{
+  width:26px; height:26px;
+  border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(142,68,255,0.18);
+  border:1px solid var(--aura);
+}
+.player__fuente .ic{ width:14px; height:14px; color:var(--aura-glow); }
+.btn-follow{
+  padding:6px 14px;
+  border-radius:999px;
+  background:transparent;
+  border:1px solid rgba(255,255,255,0.55);
+  color:#fff;
+  font-family:var(--f-body);
+  font-weight:700; font-size:10.5px;
+  letter-spacing:0.6px;
+  cursor:pointer;
+}
+.btn-follow:hover{ background:rgba(255,255,255,0.12); }
+.btn-follow.is-on{ background:#fff; color:#111; border-color:#fff; }
+
+.player__art{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  justify-content:center;
+  gap:3px;
+  text-align:right;
+  padding-right:2px;
+}
+.player__word{
+  position:absolute;
+  top:2px; right:0;
+  font-family:var(--f-display);
+  font-weight:900; font-size:34px;
+  color:rgba(255,255,255,0.10);
+  letter-spacing:2px;
+  pointer-events:none;
+}
+.player__tag{
+  position:relative;
+  font-family:var(--f-display);
+  font-weight:700; font-size:11px;
+  color:#FF4D5E;
+  letter-spacing:0.8px;
+  margin-top:26px;
+}
+.player__booster{
+  font-family:var(--f-display);
+  font-weight:900; font-size:15px;
+  letter-spacing:0.3px;
+}
+.player__boost{
+  width:100%;
+  height:4px;
+  border-radius:99px;
+  background:rgba(255,255,255,0.15);
+  overflow:hidden;
+  margin-top:3px;
+}
+.player__boost i{
+  display:block;
+  height:100%;
+  width:0%;
+  border-radius:99px;
+  background:linear-gradient(90deg,#FF4D5E,#FFC46B);
+  transition:width .4s ease;
+}
+
+.player__bar{
+  position:relative;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 14px 12px;
+}
+.player__btn{
+  width:34px; height:34px;
+  flex-shrink:0;
+  border-radius:50%;
+  background:rgba(255,255,255,0.06);
+  border:none;
+  color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+.player__btn:hover{ background:rgba(255,255,255,0.16); }
+.player__btn .ic{ width:16px; height:16px; }
+.player__time{
+  font-family:var(--f-mono);
+  font-size:10.5px;
+  color:var(--text-muted);
+  white-space:nowrap;
+  flex-shrink:0;
+}
+.player__track{
+  flex:1;
+  height:4px;
+  border-radius:99px;
+  background:rgba(255,255,255,0.16);
+  cursor:pointer;
+  position:relative;
+}
+.player__prog{
+  height:100%;
+  width:0%;
+  border-radius:99px;
+  background:linear-gradient(90deg, var(--aura), var(--aura-glow));
+}
+.player--sin-audio{ opacity:0.75; }
+
+/* ---------- Overlays (drawers) ---------- */
+.drawer{
+  position:absolute;
+  inset:0;
+  z-index:30;
+  background:rgba(6,6,10,0.72);
+  backdrop-filter:blur(3px);
+  display:flex;
+  align-items:flex-end;
+}
+.drawer.hidden{ display:none; }
+.drawer__panel{
+  width:100%;
+  background:var(--surface);
+  border-top:1px solid var(--aura-dim);
+  border-radius:20px 20px 0 0;
+  padding:18px 18px calc(var(--nav-h) + 18px);
+  animation:drawerUp .22s cubic-bezier(.2,.8,.3,1);
+}
+@keyframes drawerUp{ from{ transform:translateY(28px); opacity:0; } to{ transform:none; opacity:1; } }
+@media (prefers-reduced-motion: reduce){ .drawer__panel{ animation:none; } }
+.drawer__head{
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:12px;
+}
+.drawer__title{
+  font-family:var(--f-display);
+  font-weight:700; font-size:17px;
+}
+.drawer__x{
+  width:30px; height:30px;
+  border-radius:50%;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  color:var(--text-muted);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+.drawer__x .ic{ width:15px; height:15px; }
+.drawer__txt{
+  font-size:13.5px;
+  line-height:1.5;
+  color:var(--text-muted);
+  margin-bottom:14px;
+}
+.drawer__list{
+  list-style:none;
+  margin:0 0 14px;
+  display:flex; flex-direction:column; gap:7px;
+}
+.drawer__list li{
+  font-size:12.5px;
+  color:var(--text);
+  padding-left:16px;
+  position:relative;
+}
+.drawer__list li::before{
+  content:'';
+  position:absolute; left:0; top:7px;
+  width:6px; height:6px;
+  border-radius:50%;
+  background:var(--aura);
+}
+.drawer__op{
+  width:100%;
+  display:flex; align-items:center; gap:10px;
+  padding:14px 12px;
+  border-radius:var(--radius-sm);
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  color:var(--text);
+  font-family:var(--f-body);
+  font-weight:600; font-size:13.5px;
+  text-align:left;
+  cursor:pointer;
+  margin-bottom:8px;
+}
+.drawer__op:hover{ border-color:var(--aura); }
+.drawer__op .ic{ width:17px; height:17px; color:var(--aura-glow); }
+.drawer__op--danger{ color:var(--lose); }
+.drawer__op--danger .ic{ color:var(--lose); }
+
+/* ---------- Bottom nav v1.2.2 (5 slots + cámara central) ---------- */
+.bottom-nav{
+  left:10px; right:10px; bottom:10px;
+  height:var(--nav-h);
+  border-radius:24px;
+  border:1px solid var(--border);
+  background:rgba(22,22,31,0.94);
+  backdrop-filter:blur(10px);
+  align-items:center;
+  padding:0 4px;
+  overflow:visible;
+}
+.bottom-nav__item{
+  gap:5px;
+  font-size:9px;
+  letter-spacing:0.4px;
+  padding-top:4px;
+  position:relative;
+}
+.bottom-nav__item.active{ color:var(--aura-glow); }
+/* Subrayado del ítem activo (como en el mockup) */
+.bottom-nav__item.active::after{
+  content:'';
+  position:absolute;
+  bottom:12px; left:50%;
+  transform:translateX(-50%);
+  width:26px; height:2.5px;
+  border-radius:2px;
+  background:var(--aura);
+  box-shadow:0 0 8px var(--aura);
+}
+.bottom-nav__icon .ic{ width:21px; height:21px; }
+
+/* Botón central de cámara: hexágono elevado */
+.bottom-nav__cam{
+  flex:0 0 76px;
+  height:76px;
+  margin-top:-26px;
+  background:linear-gradient(160deg, #241640, #150F26);
+  border:1.5px solid var(--aura);
+  color:var(--text);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+  clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  filter:drop-shadow(0 0 14px rgba(142,68,255,0.55));
+  transition:transform .12s ease;
+}
+.bottom-nav__cam:active{ transform:scale(0.94); }
+.bottom-nav__cam.active{ color:var(--aura-glow); }
+.bottom-nav__cam .ic{ width:28px; height:28px; }
+
+/* ---------- Placeholders (Tienda) + switches (Ajustes) ---------- */
+.placeholder{ text-align:center; padding:28px 18px; }
+.placeholder__ic{ width:38px !important; height:38px !important; color:var(--aura-dim); }
+.placeholder__txt{ font-size:13.5px; color:var(--text-muted); margin-top:12px; line-height:1.5; }
+.placeholder__sub{ font-size:13px; margin-top:14px; color:var(--text); }
+
+.switch-row{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 0;
+  border-bottom:1px solid var(--border);
+  font-size:13.5px;
+  cursor:pointer;
+}
+.switch-row:last-child{ border-bottom:none; }
+.switch-row input{ accent-color:var(--aura); width:18px; height:18px; cursor:pointer; }
+
+/* ---------- Pantallas angostas (iPhone SE y similares) ---------- */
+@media (max-width:370px){
+  .fm-title{ font-size:25px; }
+  .vs-score{ font-size:25px; }
+  .pcard__nombre{ font-size:14px; }
+  .ronda-bar__val{ font-size:15px; }
+  .btn-chat{ padding:8px 11px; font-size:12px; }
+  .medidor{ width:66px; }
+  .medidor__track{ left:44px; }
+  .medidor__marker{ left:38px; }
 }

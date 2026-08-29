@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — auth.js
+   v0.2-web — proyectarUsuario() ahora expone 'foto' (photoURL de Google),
+     usada por el panel VS del farmeo (v1.2.2). Cambio aditivo: nada de lo
+     anterior depende del campo nuevo.
    v0.1-web — AuthService: login con Google (Firebase Auth) + sincronización
    de perfil con la nube (/usuarios/{uid}). Único módulo que toca Firebase
    Auth, igual que store.js con localStorage y online.js con Realtime DB
@@ -72,13 +75,17 @@ const AuthService = (() => {
     return { accion: 'subir-local', datos: perfilLocal };
   }
 
-  /** Traduce el usuario crudo de Firebase Auth a datos planos. PURA. */
+  /** Traduce el usuario crudo de Firebase Auth a datos planos. PURA.
+   *  v0.2-web: se agrega 'foto' (photoURL de Google) para el avatar del
+   *  panel VS de la pantalla de farmeo. Campo opcional: null si la cuenta
+   *  no tiene imagen, y nadie debe asumir que existe. */
   function proyectarUsuario(fbUser) {
     if (!fbUser) return null;
     return {
       uid:    fbUser.uid,
       nombre: fbUser.displayName || 'Jugador',
-      email:  fbUser.email || null
+      email:  fbUser.email || null,
+      foto:   fbUser.photoURL || null
     };
   }
 
