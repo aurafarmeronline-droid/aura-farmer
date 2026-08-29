@@ -509,6 +509,16 @@ const OnlineService = (() => {
     });
   }
 
+  /** v1.8.1 — Cierra MI turno y cede al rival en operaciones ordenadas:
+   *  primero marca que jugué (con puntaje), después pasa el turno. Así el
+   *  rival, cuando ve turno='suyo', ya ve también mi jugoTurno=true (sin
+   *  carrera entre los dos writes). */
+  async function terminarMiTurno(puntaje) {
+    if (!disponible || !sesion) return;
+    await marcarTurnoJugado(puntaje);
+    await pasarTurno();
+  }
+
   /** F3 — Escribe el resultado final (lo llama quien detecta el cierre). */
   async function cerrarConResultado(ganador) {
     if (!disponible || !sesion) return;
@@ -577,7 +587,7 @@ const OnlineService = (() => {
     // matchmaking (F2 código de sala + F3 automático)
     crearSala, unirseSala, buscarRival, cancelarBusqueda,
     // sincronización (F3)
-    escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado, marcarTurnoJugado,
+    escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado, marcarTurnoJugado, terminarMiTurno,
     // robustez (F4)
     iniciarHeartbeat, detenerHeartbeat, salir,
     // puras (export para tests / reuso)

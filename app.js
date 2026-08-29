@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v1.8.1-web — FIX trabado al pasar turno a B: writes ordenados
+     (terminarMiTurno = marcar jugado + pasar turno, sin carrera). Guard
+     de pantalla para no reiniciar la cámara con cada update de Firebase.
    v1.6.2-web — FIX turnos cruzados: al empezar, solo A juega y B va a espera
      (antes jugaban los dos en paralelo → pantalla negra PC / trabado cel).
      Flag jugoTurno en Firebase como fuente de verdad robusta del cierre.
@@ -602,20 +605,18 @@ function terminarRonda() {
   // dicta el estado de la sala, que llega por escucharDueloOnline().
   if (dueloEsOnline) {
     dueloState.jugadores[miRolOnline].puntaje = puntaje;
-    // Marco en Firebase que YA jugué (flag explícito) + subo mi puntaje.
-    OnlineService.marcarTurnoJugado(puntaje).catch(() => {});
-
     const rolRival = miRolOnline === 'A' ? 'B' : 'A';
-    // ¿El rival ya cerró su turno? Lo sabemos por el flag jugoTurno que
-    // escucharDueloOnline guarda en rivalYaJugoOnline (fuente de verdad Firebase).
+
     if (rivalYaJugoOnline) {
-      // Los dos jugaron → yo cierro el duelo con el resultado.
+      // Los dos jugaron → marco mi turno y cierro el duelo con el resultado.
+      OnlineService.marcarTurnoJugado(puntaje).catch(() => {});
       const r = DueloEngine.resolver(dueloState);
       OnlineService.cerrarConResultado(r.ganador).catch(() => {});
       // El veredicto llega por escucharDueloOnline (estado='terminado').
     } else {
-      // Falta el rival → le paso el turno y quedo esperando.
-      OnlineService.pasarTurno().catch(() => {});
+      // Falta el rival → marco jugado y paso el turno EN ORDEN (sin carrera),
+      // después quedo esperando. terminarMiTurno hace ambos writes ordenados.
+      OnlineService.terminarMiTurno(puntaje).catch(() => {});
       esperandoRival = true;
       pintarEsperaRival({ rivalNombre: dueloState.jugadores[rolRival].nombre, rivalPuntaje: 0 });
       showScreen('screen-espera');
@@ -1043,14 +1044,16 @@ function escucharDueloOnline() {
     if (dueloState) dueloState.turnoActual = est.turno;
 
     if (est.esMiTurno && !est.miJugo) {
-      // Es mi turno Y todavía no jugué: entro a jugar.
-      if (esperandoRival || currentScreen !== 'screen-farmeo') {
+      // Es mi turno Y todavía no jugué: entro a jugar (solo si no estoy ya ahí).
+      if (currentScreen !== 'screen-farmeo') {
         esperandoRival = false;
         showScreen('screen-farmeo');
       }
     } else {
       // Turno del rival, o ya jugué y espero el cierre: pantalla de espera.
       esperandoRival = true;
+      // Actualizo el puntaje en vivo SIEMPRE (para verlo subir), pero solo
+      // cambio de pantalla si no estoy ya en espera (evita reinicios).
       pintarEsperaRival(est);
       if (currentScreen !== 'screen-espera') showScreen('screen-espera');
     }
