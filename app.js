@@ -1,5 +1,9 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v1.8.2-web — FIX CRÍTICO multiplayer: limpiarMatchmaking ya NO cierra
+     la sesión al pasar a la cámara (era la causa de sesionActual()=null
+     y del jugador 2 muerto). + Cuenta atrás de 30s en panel listo con
+     auto-inicio si nadie aprieta "Empezar duelo".
    v1.8.1-web — FIX trabado al pasar turno a B: writes ordenados
      (terminarMiTurno = marcar jugado + pasar turno, sin carrera). Guard
      de pantalla para no reiniciar la cámara con cada update de Firebase.
@@ -949,8 +953,36 @@ function mmEscucharSala() {
       document.getElementById('mm-av-rival').textContent    = iniciales(est.rivalNombre);
       document.getElementById('mm-nombre-rival').textContent = est.rivalNombre;
       mmMostrarPanel('mm-panel-listo');
+      arrancarCuentaAtras();   // v1.8.1 — 30s y arranca solo
     }
   });
+}
+
+/* v1.8.1 — Cuenta atrás de 30s en el panel "listo". Si nadie aprieta
+   "¡Empezar duelo!", arranca solo. Evita quedarse trabado esperando el click. */
+let mmCuentaId = null;
+function arrancarCuentaAtras(segundos = 30) {
+  detenerCuentaAtras();
+  let restante = segundos;
+  const lbl = document.getElementById('mm-btn-empezar');
+  const textoBase = '¡Empezar duelo!';
+  const pintar = () => {
+    if (lbl) lbl.textContent = textoBase + '  (' + restante + 's)';
+  };
+  pintar();
+  mmCuentaId = setInterval(() => {
+    restante--;
+    if (restante <= 0) {
+      detenerCuentaAtras();
+      if (lbl) lbl.textContent = textoBase;
+      mmEmpezarDuelo();   // arranca solo
+      return;
+    }
+    pintar();
+  }, 1000);
+}
+function detenerCuentaAtras() {
+  if (mmCuentaId) { clearInterval(mmCuentaId); mmCuentaId = null; }
 }
 
 async function mmCrear() {
@@ -1095,6 +1127,7 @@ function irAVeredictoOnline(est) {
 }
 
 function mmEmpezarDuelo() {
+  detenerCuentaAtras();   // v1.8.1 — frena el auto-inicio si arrancamos a mano
   const sesion = OnlineService.sesionActual();
   if (!sesion) return;
   const perfil      = Store.obtenerPerfil();
@@ -1126,6 +1159,14 @@ function mmEmpezarDuelo() {
 }
 
 function limpiarMatchmaking() {
+  // v1.8.1 FIX — Si el duelo online YA arrancó, NO cerramos la sesión: el
+  // duelo la necesita viva. Antes esto llamaba salir() y mataba la sesión
+  // justo al pasar a la cámara (por eso sesionActual() daba null y B moría).
+  if (dueloEsOnline) {
+    if (mmUnsubSala) { mmUnsubSala(); mmUnsubSala = null; }
+    mmError('');
+    return;
+  }
   if (mmUnsubSala) { mmUnsubSala(); mmUnsubSala = null; }
   OnlineService.cancelarBusqueda().catch(() => {});
   OnlineService.salir().catch(() => {});
@@ -1154,7 +1195,7 @@ function iniciarMatchmaking() {
   reBind('mm-btn-unirse',         mmUnirse);
   reBind('mm-btn-cancelar-espera',() => { limpiarMatchmaking(); showScreen('screen-inicio'); });
   reBind('mm-btn-empezar',        mmEmpezarDuelo);
-  reBind('mm-btn-cancelar-listo', () => { limpiarMatchmaking(); showScreen('screen-inicio'); });
+  reBind('mm-btn-cancelar-listo', () => { detenerCuentaAtras(); limpiarMatchmaking(); showScreen('screen-inicio'); });
   const inp = document.getElementById('mm-input-codigo');
   if (inp) inp.addEventListener('input', () => mmError(''));
 }
