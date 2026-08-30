@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.1.6-web — Sesión Google PERSISTENTE (espera onCambioSesion antes de
+     decidir pantalla; ya no se pierde al cerrar pestaña ni cae a invitado) +
+     editar nombre/foto sube a la nube si hay sesión.
    v2.1.5-web — FIX nombre Google (usa displayName real, no el invitado) +
      editor de perfil con FOTO (subir del dispositivo, comprimida a 256px).
    v1.9.1-web — Pantalla de IDENTIDAD al iniciar (screen-identidad):
@@ -15,6 +18,9 @@
    ============================================================ */
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.1.6-web — Sesión Google PERSISTENTE (espera onCambioSesion antes de
+     decidir pantalla; ya no se pierde al cerrar pestaña ni cae a invitado) +
+     editar nombre/foto sube a la nube si hay sesión.
    v2.1.5-web — FIX nombre Google (usa displayName real, no el invitado) +
      editor de perfil con FOTO (subir del dispositivo, comprimida a 256px).
    v1.8.2-web — FIX CRÍTICO multiplayer: limpiarMatchmaking ya NO cierra
@@ -1260,16 +1266,46 @@ document.addEventListener('DOMContentLoaded', () => {
   wireAjustes();
   wireIdentidad();   // v1.9.1
 
-  // v1.9.1 — Pantalla de identidad al iniciar. Si ya hay sesión Google previa,
-  // la salteamos directo a inicio. Si no, el jugador elige Google o invitado.
-  const yaLogueado = window.AuthService && AuthService.estaLogueado &&
-                     AuthService.estaLogueado();
-  if (yaLogueado) {
-    if (typeof Store.fijarModo === 'function') Store.fijarModo('cuenta');
-    informarNivelAOnline();
-    showScreen('screen-inicio');
+  // v2.1.6 — Arranque con sesión Google PERSISTENTE. Firebase carga la sesión
+  // de forma asíncrona: estaLogueado() da false en el primer instante aunque
+  // ya estés logueado en el navegador. Por eso ESPERAMOS a que Auth confirme
+  // (onCambioSesion) antes de decidir la pantalla. Si hay sesión → modo cuenta
+  // y directo a inicio (con tu nombre/foto de Google). Si no → identidad.
+  let decidido = false;
+  const decidirPantalla = (usuario) => {
+    if (decidido) return;
+    decidido = true;
+    if (usuario) {
+      // Sesión Google activa: modo cuenta, sembrar nombre/foto reales.
+      if (typeof Store.fijarModo === 'function') Store.fijarModo('cuenta');
+      if (usuario.nombre) Store.guardarNombre(usuario.nombre);
+      if (usuario.foto)   Store.guardarFoto(usuario.foto);
+      // Sincronizar con la nube (trae historial/monedas de la cuenta).
+      AuthService.sincronizarPerfil(Store.exportarTodo())
+        .then(pf => { Store.reemplazarPerfil(pf); informarNivelAOnline(); pintarHome?.(); })
+        .catch(() => {});
+      informarNivelAOnline();
+      showScreen('screen-inicio');
+    } else {
+      showScreen('screen-identidad');
+    }
+  };
+
+  const arrancarConAuth = () => {
+    AuthService.onCambioSesion(decidirPantalla);
+    // Red de seguridad: si Auth no responde en 2.5s (sin Firebase, offline),
+    // no dejamos la app colgada: mostramos identidad.
+    setTimeout(() => decidirPantalla(AuthService.usuarioActual?.() || null), 2500);
+  };
+
+  if (window.AuthService && (AuthService.estaDisponible?.() || AuthService.init?.())) {
+    arrancarConAuth();
+  } else if (window.__FIREBASE__) {
+    AuthService.init(); arrancarConAuth();
   } else {
-    showScreen('screen-identidad');
+    window.addEventListener('firebase-ready', () => { AuthService.init(); arrancarConAuth(); }, { once: true });
+    // Si Firebase nunca llega, a los 2.5s mostramos identidad igual.
+    setTimeout(() => decidirPantalla(null), 2500);
   }
 });
 
@@ -1357,6 +1393,10 @@ function wirePerfil() {
     const escrito = (inp?.value || '').trim();
     if (!escrito) { err?.classList.remove('hidden'); return; }
     Store.guardarNombre(escrito);
+    // v2.1.6 — si estás logueado, subir el cambio a la nube.
+    if (window.AuthService && AuthService.estaLogueado()) {
+      AuthService.subirPerfil(Store.exportarTodo()).catch(() => {});
+    }
     editor?.classList.add('hidden');
     pintarHome();
   };
@@ -1380,6 +1420,9 @@ function wirePerfil() {
     try {
       const dataUrl = await comprimirImagen(file, 256); // 256px máx, cuadrada
       Store.guardarFoto(dataUrl);
+      if (window.AuthService && AuthService.estaLogueado()) {
+        AuthService.subirPerfil(Store.exportarTodo()).catch(() => {});
+      }
       pintarPreviewFoto();
       pintarHome();
     } catch (e) {
