@@ -248,6 +248,18 @@
       <input id="input-nombre" type="text" maxlength="20" class="perfil-editor__input"
              placeholder="¿Cómo te llamás?" autocomplete="off">
       <p class="perfil-editor__error hidden" id="perfil-editor-error">Poné un nombre válido.</p>
+
+      <!-- v2.1.5 — Foto de perfil: subir desde el dispositivo -->
+      <label class="perfil-editor__label" style="margin-top:14px;">Foto de perfil</label>
+      <div class="row" style="gap:12px; align-items:center;">
+        <div class="avatar" id="editor-foto-preview" style="width:64px;height:64px;background-size:cover;background-position:center;">MX</div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+          <input id="editor-foto-input" type="file" accept="image/*" style="display:none;">
+          <button class="btn btn--secondary" id="btn-subir-foto">Subir imagen</button>
+          <button class="btn btn--ghost" id="btn-quitar-foto" style="font-size:13px;">Quitar foto</button>
+        </div>
+      </div>
+
       <div class="row mt-8" style="gap:10px;">
         <button class="btn btn--ghost" style="flex:1;" id="btn-cancelar-nombre">Cancelar</button>
         <button class="btn btn--primary" style="flex:1;" id="btn-guardar-nombre">Guardar</button>

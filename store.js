@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — store.js
+   v0.13-web (v2.1.5) — campo foto en perfil + guardarFoto() (con tope de
+     tamaño). Foto persiste con la cuenta.
    v0.12-web (v1.4.1 del proyecto) — MODELO INVITADO vs CUENTA:
      · Invitado temporal (tipo agar.io): nombre "Usuario xxxx", vive en
        sessionStorage → se borra SOLO al cerrar la pestaña. Sin código de
@@ -28,7 +30,7 @@ const Store = (() => {
     perfil: {
       nombre: 'Vos', puntajeTotal: 0,
       victorias: 0, derrotas: 0, empates: 0,
-      monedas: 0, resets: 0
+      monedas: 0, resets: 0, foto: null
     },
     historial: []
   };
@@ -91,7 +93,8 @@ const Store = (() => {
       derrotas:     Number(perfil.derrotas) || 0,
       empates:      Number(perfil.empates) || 0,
       monedas:      Number(perfil.monedas) || 0,
-      resets:       Number(perfil.resets) || 0
+      resets:       Number(perfil.resets) || 0,
+      foto:         typeof perfil.foto === 'string' ? perfil.foto : null
     };
   }
 
@@ -217,7 +220,8 @@ const Store = (() => {
         derrotas:     Number(data.perfil.derrotas) || 0,
         empates:      Number(data.perfil.empates) || 0,
         monedas:      Number(data.perfil.monedas) || 0,
-        resets:       Number(data.perfil.resets) || 0
+        resets:       Number(data.perfil.resets) || 0,
+        foto:         typeof data.perfil.foto === 'string' ? data.perfil.foto : null
       },
       historial: Array.isArray(data.historial) ? data.historial.slice(0, HISTORIAL_MAX) : []
     };
@@ -247,11 +251,28 @@ const Store = (() => {
     return data.perfil.resets;
   }
 
+  /** v2.1.5 — Guarda la foto de perfil (dataURL o photoURL de Google).
+   *  null la borra (vuelve a iniciales). Cap de tamaño para no reventar
+   *  el storage (las fotos grandes se rechazan; el editor ya las achica). */
+  function guardarFoto(foto) {
+    const data = cargar();
+    if (foto === null) { data.perfil.foto = null; guardar(data); return null; }
+    const str = String(foto || '');
+    // Límite ~1.5MB en dataURL (localStorage suele topar en ~5MB total).
+    if (str.length > 1_500_000) {
+      console.warn('Store.guardarFoto: imagen demasiado grande, se ignora.');
+      return data.perfil.foto || null;
+    }
+    data.perfil.foto = str;
+    guardar(data);
+    return str;
+  }
+
   return {
     cargar, guardarResultado, guardarNombre, nombreEsDefault, obtenerPerfil, obtenerHistorial,
     reemplazarPerfil, exportarTodo,
     // v0.12: modo invitado/cuenta + economía
-    fijarModo, nombreInvitadoAleatorio, sumarMonedas, registrarReset
+    fijarModo, nombreInvitadoAleatorio, sumarMonedas, registrarReset, guardarFoto
   };
 })();
 

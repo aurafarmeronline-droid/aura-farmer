@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.1.5-web — FIX nombre Google (usa displayName real, no el invitado) +
+     editor de perfil con FOTO (subir del dispositivo, comprimida a 256px).
    v1.9.1-web — Pantalla de IDENTIDAD al iniciar (screen-identidad):
      elegir "Iniciar con Google" o "Jugar como invitado" (con nombre).
      Si ya hay sesión Google, se saltea directo a inicio.
@@ -13,6 +15,8 @@
    ============================================================ */
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.1.5-web — FIX nombre Google (usa displayName real, no el invitado) +
+     editor de perfil con FOTO (subir del dispositivo, comprimida a 256px).
    v1.8.2-web — FIX CRÍTICO multiplayer: limpiarMatchmaking ya NO cierra
      la sesión al pasar a la cámara (era la causa de sesionActual()=null
      y del jugador 2 muerto). + Cuenta atrás de 30s en panel listo con
@@ -818,7 +822,19 @@ function pintarHome() {
 
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
-  set('profile-avatar', iniciales(p.nombre));
+  // v2.1.5 — avatar con foto si hay, si no iniciales.
+  const av = document.getElementById('profile-avatar');
+  if (av) {
+    if (p.foto) {
+      av.style.backgroundImage = `url('${p.foto}')`;
+      av.style.backgroundSize = 'cover';
+      av.style.backgroundPosition = 'center';
+      av.textContent = '';
+    } else {
+      av.style.backgroundImage = '';
+      av.textContent = iniciales(p.nombre);
+    }
+  }
   set('profile-nombre', p.nombre);
   set('profile-nivel', `Nivel ${nivel}`);
   set('profile-aura', rango);
@@ -1271,8 +1287,13 @@ function wireIdentidad() {
     }
     btnGoogle.disabled = true;
     try {
-      await AuthService.iniciarSesionGoogle();
+      const userG = await AuthService.iniciarSesionGoogle();
       if (typeof Store.fijarModo === 'function') Store.fijarModo('cuenta');
+      // v2.1.5 FIX — Al loguearse, el nombre/foto salen de GOOGLE, no del
+      // invitado viejo. Sembramos el perfil local con los datos de Google
+      // ANTES de sincronizar, así la nube recibe "bocon" y no "Usuario 4505".
+      if (userG && userG.nombre) Store.guardarNombre(userG.nombre);
+      if (userG && userG.foto)   Store.guardarFoto(userG.foto);
       const perfilFinal = await AuthService.sincronizarPerfil(Store.exportarTodo());
       Store.reemplazarPerfil(perfilFinal);
       informarNivelAOnline();
@@ -1328,6 +1349,7 @@ function wirePerfil() {
     if (inp) inp.value = Store.obtenerPerfil().nombre || '';
     err?.classList.add('hidden');
     editor?.classList.remove('hidden');
+    pintarPreviewFoto();   // v2.1.5
     inp?.focus();
   });
   cancel?.addEventListener('click', () => editor?.classList.add('hidden'));
@@ -1341,6 +1363,70 @@ function wirePerfil() {
   guardar?.addEventListener('click', guardarNombre);
   inp?.addEventListener('keydown', e => { if (e.key === 'Enter') guardarNombre(); });
   inp?.addEventListener('input', () => err?.classList.add('hidden'));
+
+  // v2.1.5 — Foto de perfil: subir desde el dispositivo, comprimida.
+  const fotoInput   = document.getElementById('editor-foto-input');
+  const btnSubir    = document.getElementById('btn-subir-foto');
+  const btnQuitar   = document.getElementById('btn-quitar-foto');
+  btnSubir?.addEventListener('click', () => fotoInput?.click());
+  btnQuitar?.addEventListener('click', () => {
+    Store.guardarFoto(null);
+    pintarPreviewFoto();
+    pintarHome();
+  });
+  fotoInput?.addEventListener('change', async () => {
+    const file = fotoInput.files && fotoInput.files[0];
+    if (!file) return;
+    try {
+      const dataUrl = await comprimirImagen(file, 256); // 256px máx, cuadrada
+      Store.guardarFoto(dataUrl);
+      pintarPreviewFoto();
+      pintarHome();
+    } catch (e) {
+      console.warn('subir foto:', e);
+      err && (err.textContent = 'No se pudo cargar la imagen.', err.classList.remove('hidden'));
+    }
+    fotoInput.value = '';
+  });
+}
+
+/** v2.1.5 — Pinta el preview de la foto en el editor (foto o iniciales). */
+function pintarPreviewFoto() {
+  const prev = document.getElementById('editor-foto-preview');
+  if (!prev) return;
+  const p = Store.obtenerPerfil();
+  if (p.foto) {
+    prev.style.backgroundImage = `url('${p.foto}')`;
+    prev.textContent = '';
+  } else {
+    prev.style.backgroundImage = '';
+    prev.textContent = iniciales(p.nombre);
+  }
+}
+
+/** v2.1.5 — Comprime una imagen a un cuadrado de lado `max` px → dataURL JPEG.
+ *  Achica para no reventar el storage (localStorage ~5MB). */
+function comprimirImagen(file, max = 256) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('img'));
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = max; canvas.height = max;
+        const ctx = canvas.getContext('2d');
+        // Recorte cuadrado centrado (cover).
+        const lado = Math.min(img.width, img.height);
+        const sx = (img.width - lado) / 2, sy = (img.height - lado) / 2;
+        ctx.drawImage(img, sx, sy, lado, lado, 0, 0, max, max);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 /* ---- Auth (sin cambios) ---- */
@@ -1373,8 +1459,11 @@ function wireAuth() {
   btnLogin?.addEventListener('click', async () => {
     btnLogin.disabled = true;
     try {
-      await AuthService.iniciarSesionGoogle();
+      const userG = await AuthService.iniciarSesionGoogle();
       if (typeof Store.fijarModo === 'function') Store.fijarModo('cuenta'); // v1.4.1 persistente
+      // v2.1.5 FIX — nombre/foto de Google como semilla antes de sincronizar.
+      if (userG && userG.nombre) Store.guardarNombre(userG.nombre);
+      if (userG && userG.foto)   Store.guardarFoto(userG.foto);
       const perfilFinal = await AuthService.sincronizarPerfil(Store.exportarTodo());
       Store.reemplazarPerfil(perfilFinal);
       informarNivelAOnline();
