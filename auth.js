@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — auth.js
+   v0.3-web (v2.1.7) — regla de conflicto: si la nube tiene un nombre
+     residual "Usuario XXXX" (del bug viejo) y lo local trae el nombre real
+     de Google, se corrige y se re-sube. Rompe el círculo del nombre pegado.
    v0.2-web — proyectarUsuario() ahora expone 'foto' (photoURL de Google),
      usada por el panel VS del farmeo (v1.2.2). Cambio aditivo: nada de lo
      anterior depende del campo nuevo.
@@ -64,12 +67,28 @@ const AuthService = (() => {
    * REGLA DE CONFLICTO, pura. Decide qué perfil queda tras loguear.
    *   - hay perfil nube  → 'usar-nube'   (la nube pisa lo local)
    *   - NO hay perfil nube → 'subir-local' (lo local sube como semilla)
-   * @param {Object|null} perfilNube  - lo que hay en /usuarios/{uid}, o null/undefined
-   * @param {Object} perfilLocal      - Store.exportarTodo() actual
-   * @returns {{accion:'usar-nube'|'subir-local', datos:Object}}
+   *
+   * v2.1.7 — EXCEPCIÓN: si el nombre en la nube es un "Usuario XXXX" residual
+   * (quedó del bug viejo donde el invitado pisaba el nombre de Google), y lo
+   * local trae un nombre real, preferimos el nombre local pero conservamos los
+   * datos de la nube (puntaje/historial/monedas). Rompe el círculo del nombre
+   * pegado sin perder el progreso de la cuenta.
    */
+  function esNombreResidual(nombre) {
+    return /^Usuario \d{3,4}$/.test(String(nombre || '').trim());
+  }
+
   function resolverConflicto(perfilNube, perfilLocal) {
     if (perfilNube && perfilNube.perfil) {
+      const nombreNube  = perfilNube.perfil.nombre;
+      const nombreLocal = perfilLocal && perfilLocal.perfil && perfilLocal.perfil.nombre;
+      // Si la nube tiene un nombre residual y lo local trae uno real, corregimos.
+      if (esNombreResidual(nombreNube) && nombreLocal && !esNombreResidual(nombreLocal)) {
+        const corregido = JSON.parse(JSON.stringify(perfilNube));
+        corregido.perfil.nombre = nombreLocal;
+        if (perfilLocal.perfil.foto) corregido.perfil.foto = perfilLocal.perfil.foto;
+        return { accion: 'usar-nube-corregida', datos: corregido };
+      }
       return { accion: 'usar-nube', datos: perfilNube };
     }
     return { accion: 'subir-local', datos: perfilLocal };
@@ -184,9 +203,11 @@ const AuthService = (() => {
 
     const { accion, datos } = resolverConflicto(perfilNube, perfilLocalActual);
 
-    if (accion === 'subir-local') {
+    // subir-local (semilla) o usar-nube-corregida (arreglar nombre residual):
+    // en ambos casos escribimos la nube con los datos resultantes.
+    if (accion === 'subir-local' || accion === 'usar-nube-corregida') {
       try { await set(uidRef, datos); }
-      catch (err) { console.warn('AuthService sincronizarPerfil: no se pudo subir semilla.', err); }
+      catch (err) { console.warn('AuthService sincronizarPerfil: no se pudo subir.', err); }
       return datos;
     }
     // accion === 'usar-nube': la nube ya tiene el estado correcto, se aplica tal cual.
