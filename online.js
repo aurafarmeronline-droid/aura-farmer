@@ -196,6 +196,9 @@ const OnlineService = (() => {
       rivalNombre: rival.nombre || 'Rival',
       rivalPuntaje: rival.puntajeTotal ?? 0,
       rivalNivel: rival.nivel ?? 0,   // v1.4.1 — nivel histórico del rival
+      // v2.1.9 — qué está haciendo el rival AHORA (para la pantalla de espera).
+      rivalPose:  rival.poseActual ?? null,
+      rivalBanda: rival.banda ?? null,
       rivalJugo: !!rival.jugoTurno,   // v1.6.1 — el rival ya cerró su turno
       miJugo: !!yo.jugoTurno,
       // rivalPresente: la ficha del rival EXISTE en la sala (sin mirar heartbeat).
@@ -476,13 +479,16 @@ const OnlineService = (() => {
   }
 
   /** F3 — Sube MI puntaje (y opcionalmente la pose actual para feedback en vivo). */
-  async function enviarPuntaje(puntaje, poseActual = null) {
+  /** Sube mi estado de juego en vivo. v2.1.9: también la banda (PERFECT/GOOD/
+   *  OK/MISS) para que el rival vea qué tan bien voy en su pantalla de espera. */
+  async function enviarPuntaje(puntaje, poseActual = null, banda = null) {
     if (!disponible || !sesion) return;
     const { ref, update } = fb.DB;
     const miRef = ref(fb.db, 'salas/' + sesion.salaId + '/jugador' + sesion.rol);
     await update(miRef, {
       puntajeTotal: Math.max(0, Math.round(puntaje || 0)),
       poseActual,
+      banda,
       heartbeat: Date.now()
     });
   }

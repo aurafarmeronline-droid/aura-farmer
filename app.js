@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.1.9-web — FIX cuenta atrás en loop (se reiniciaba con cada heartbeat
+     de Firebase: 30→29→28→30...) + la pantalla de espera ahora muestra QUÉ
+     pose hace el rival y su banda en vivo.
    v2.1.8-web — Botón de cambiar cámara (frontal/trasera) en el viewfinder.
      Reengancha la detección al stream nuevo y quita el espejado en trasera.
    v2.1.6-web — Sesión Google PERSISTENTE (espera onCambioSesion antes de
@@ -20,6 +23,9 @@
    ============================================================ */
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.1.9-web — FIX cuenta atrás en loop (se reiniciaba con cada heartbeat
+     de Firebase: 30→29→28→30...) + la pantalla de espera ahora muestra QUÉ
+     pose hace el rival y su banda en vivo.
    v2.1.8-web — Botón de cambiar cámara (frontal/trasera) en el viewfinder.
      Reengancha la detección al stream nuevo y quita el espejado en trasera.
    v2.1.6-web — Sesión Google PERSISTENTE (espera onCambioSesion antes de
@@ -248,7 +254,7 @@ function startPoseDetection(video, canvas, poseChip) {
         const ahora = Date.now();
         if (ahora - ultimoEnvioPuntaje > 1500) {
           ultimoEnvioPuntaje = ahora;
-          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre).catch(() => {});
+          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre, resultado.banda).catch(() => {});
         }
       }
 
@@ -259,7 +265,7 @@ function startPoseDetection(video, canvas, poseChip) {
         // rival lo vea crecer en vivo en su pantalla de espera. Una vez por
         // paso (no por frame) para no saturar Firebase.
         if (dueloEsOnline) {
-          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre).catch(() => {});
+          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre, resultado.banda).catch(() => {});
         }
         // Efecto visual de "pam" (opcional)
         const scoreEl = document.getElementById('hud-score');
@@ -988,6 +994,7 @@ function escaparHtml(str) {
 
 /* ---- Matchmaking (sin cambios) ---- */
 let mmUnsubSala = null;
+let mmCuentaId  = null;   // v2.1.9 — id del interval de la cuenta atrás
 let mmSalaId    = null;
 
 function mmMostrarPanel(nombre) {
@@ -1042,14 +1049,16 @@ function mmEscucharSala() {
       document.getElementById('mm-av-rival').textContent    = iniciales(est.rivalNombre);
       document.getElementById('mm-nombre-rival').textContent = est.rivalNombre;
       mmMostrarPanel('mm-panel-listo');
-      arrancarCuentaAtras();   // v1.8.1 — 30s y arranca solo
+      // v2.1.9 FIX — arrancarCuentaAtras() SOLO la primera vez. Antes se
+      // llamaba en cada update de Firebase (heartbeats cada 3s) y el contador
+      // se reiniciaba solo: 30 → 29 → 28 → 30 → 29... loop infinito.
+      if (mmCuentaId === null) arrancarCuentaAtras();
     }
   });
 }
 
 /* v1.8.1 — Cuenta atrás de 30s en el panel "listo". Si nadie aprieta
    "¡Empezar duelo!", arranca solo. Evita quedarse trabado esperando el click. */
-let mmCuentaId = null;
 function arrancarCuentaAtras(segundos = 30) {
   detenerCuentaAtras();
   let restante = segundos;
@@ -1190,15 +1199,33 @@ function escucharDueloOnline() {
   });
 }
 
-/** Pinta la pantalla de espera mientras el rival juega su turno. */
+/** Pinta la pantalla de espera mientras el rival juega su turno.
+ *  v2.1.9 — además del puntaje, muestra QUÉ pose está haciendo y cómo le
+ *  está saliendo (banda), para que el que espera vea el turno del otro. */
 function pintarEsperaRival(est) {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const nombre = est.rivalNombre || 'Rival';
   set('espera-rival-nombre', nombre);
   set('espera-rival-puntaje', est.rivalPuntaje || 0);
   set('espera-rival-avatar', nombre.slice(0, 2).toUpperCase());
+
+  // Qué pose está haciendo ahora.
   const pose = est.rivalPose || est.poseActual;
-  set('espera-rival-pose', pose ? ('Haciendo: ' + pose) : '');
+  set('espera-rival-pose', pose ? ('Haciendo: ' + pose) : 'Preparándose…');
+
+  // Cómo le está saliendo (PERFECT/GOOD/OK/MISS) con color.
+  const bandaEl = document.getElementById('espera-rival-banda');
+  if (bandaEl) {
+    const b = est.rivalBanda;
+    bandaEl.textContent = b || '';
+    bandaEl.classList.toggle('hidden', !b);
+    const color = b === 'PERFECT' ? 'var(--win)'
+                : b === 'GOOD'    ? 'var(--aura-glow)'
+                : b === 'OK'      ? 'var(--combo)'
+                : b === 'MISS'    ? 'var(--lose)' : 'var(--text-muted)';
+    bandaEl.style.color = color;
+    bandaEl.style.borderColor = color;
+  }
 }
 
 /** Cierre sincronizado: ambos ven el mismo veredicto desde Firebase. */
