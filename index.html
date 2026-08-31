@@ -81,6 +81,13 @@
     <symbol id="ic-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.8" r="1" fill="currentColor" stroke="none"/>
     </symbol>
+    <symbol id="ic-flip-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 8h-3l-2-2H9L7 8H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2z"/>
+      <path d="M9 14a3 3 0 0 0 5 2.2"/>
+      <path d="M15 14a3 3 0 0 0-5-2.2"/>
+      <path d="M14 11.5l1.5-1.5"/>
+      <path d="M10 16.5L8.5 18"/>
+    </symbol>
     <symbol id="ic-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>
     </symbol>
@@ -446,6 +453,12 @@
       <!-- Pantalla completa del viewfinder -->
       <button class="vf-expand" id="btn-fullscreen" aria-label="Pantalla completa">
         <svg class="ic"><use href="#ic-expand"/></svg>
+      </button>
+
+      <!-- v2.1.8 — Cambiar cámara (frontal/trasera), tipo WhatsApp.
+           Se oculta solo si el dispositivo tiene una sola cámara. -->
+      <button class="vf-expand vf-flip hidden" id="btn-flip-cam" aria-label="Cambiar cámara">
+        <svg class="ic"><use href="#ic-flip-cam"/></svg>
       </button>
 
       <div id="pose-status" class="pose-status hidden">cargando IA...</div>

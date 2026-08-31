@@ -1,5 +1,6 @@
 /* ============================================================
    AURA FARMER — style.css
+   v2.1.8-web — botón .vf-flip (cambiar cámara) + clase .sin-espejo.
    v1.8.1-web — Fix cámara chica en móvil: viewfinder con min-height
      340px y aspect-ratio 3/4 (antes se aplastaba a una franja fina
      en pantallas angostas).
@@ -824,8 +825,17 @@ body{
   display:flex; align-items:center; justify-content:center;
   cursor:pointer;
 }
+/* v2.1.8 — Cámara trasera: sin espejar (el espejo es solo para selfie). */
+#viewfinder-video.sin-espejo{ transform:none; }
+#viewfinder-canvas.sin-espejo{ transform:none; }
+
 .vf-expand:hover{ border-color:var(--aura); color:var(--aura-glow); }
 .vf-expand .ic{ width:18px; height:18px; }
+
+/* v2.1.8 — Botón de cambiar cámara: a la izquierda del de pantalla completa. */
+.vf-flip{ right:60px; }
+.vf-flip.hidden{ display:none; }
+.vf-flip.girando{ transform:rotate(180deg); transition:transform .35s ease; }
 
 /* En pantalla completa el video tapa todo pero el HUD sigue arriba */
 .viewfinder:fullscreen{ border-radius:0; aspect-ratio:auto; height:100%; width:100%; }

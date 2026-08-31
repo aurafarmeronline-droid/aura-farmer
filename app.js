@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.1.8-web — Botón de cambiar cámara (frontal/trasera) en el viewfinder.
+     Reengancha la detección al stream nuevo y quita el espejado en trasera.
    v2.1.6-web — Sesión Google PERSISTENTE (espera onCambioSesion antes de
      decidir pantalla; ya no se pierde al cerrar pestaña ni cae a invitado) +
      editar nombre/foto sube a la nube si hay sesión.
@@ -18,6 +20,8 @@
    ============================================================ */
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.1.8-web — Botón de cambiar cámara (frontal/trasera) en el viewfinder.
+     Reengancha la detección al stream nuevo y quita el espejado en trasera.
    v2.1.6-web — Sesión Google PERSISTENTE (espera onCambioSesion antes de
      decidir pantalla; ya no se pierde al cerrar pestaña ni cae a invitado) +
      editar nombre/foto sube a la nube si hay sesión.
@@ -178,6 +182,15 @@ function startFarmeo() {
       errMsg.textContent = msg;
     }
   });
+
+  // v2.1.8 — El botón de cambiar cámara solo tiene sentido si hay más de una
+  // (típico en celulares). En desktop con una sola webcam queda oculto.
+  const btnFlip = document.getElementById('btn-flip-cam');
+  if (btnFlip && CameraService.hayVariasCamaras) {
+    CameraService.hayVariasCamaras()
+      .then(varias => btnFlip.classList.toggle('hidden', !varias))
+      .catch(() => btnFlip.classList.add('hidden'));
+  }
 }
 
 /* ---- Detección de poses con VisionService ---- */
@@ -631,6 +644,34 @@ function wireFarmeoUI() {
       document.exitFullscreen().catch(() => {});
     } else if (vf.requestFullscreen) {
       vf.requestFullscreen().catch(err => console.warn('Fullscreen no disponible:', err));
+    }
+  });
+
+  // v2.1.8 — Cambiar cámara frontal/trasera (tipo WhatsApp).
+  on('btn-flip-cam', async () => {
+    const btn = document.getElementById('btn-flip-cam');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add('girando');
+    try {
+      const nuevo = await CameraService.cambiarCamara();
+      if (nuevo) {
+        // La cámara se re-arrancó: hay que reenganchar la detección al
+        // stream nuevo (VisionService quedó apuntando al stream viejo).
+        const video    = document.getElementById('viewfinder-video');
+        const canvas   = document.getElementById('viewfinder-canvas');
+        const poseChip = document.getElementById('pose-status');
+        if (window.VisionService) VisionService.stop();
+        if (video && canvas) startPoseDetection(video, canvas, poseChip);
+        // El espejado (selfie) es solo para la frontal; la trasera va normal.
+        const trasera = (nuevo === 'environment');
+        video?.classList.toggle('sin-espejo', trasera);
+        canvas?.classList.toggle('sin-espejo', trasera);
+      }
+    } catch (e) {
+      console.warn('cambiar cámara:', e);
+    } finally {
+      setTimeout(() => { btn.classList.remove('girando'); btn.disabled = false; }, 400);
     }
   });
 }

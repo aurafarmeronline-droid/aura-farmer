@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — camera.js
+   v0.3-web (v2.1.8) — cámara frontal/trasera seleccionable (tipo WhatsApp):
+     start({facingMode}), cambiarCamara(), camaraActual(), hayVariasCamaras().
+     Si la cámara pedida falla, vuelve sola a la anterior.
    v0.2-web — CameraService aislado.
    NO sabe nada de MediaPipe ni del juego. Solo:
    - pide permiso de cámara,
@@ -14,8 +17,13 @@ const CameraService = (() => {
     stream: null,
     videoEl: null,
     running: false,
-    sessionId: 0        // anti-race: cada start() incrementa; callbacks
+    sessionId: 0,       // anti-race: cada start() incrementa; callbacks
                         // async chequean que su sessionId siga vigente.
+    // v2.1.8 — cámara activa: 'user' (frontal) o 'environment' (trasera).
+    facingMode: 'user',
+    // Guardamos los callbacks del último start() para poder re-arrancar
+    // con la otra cámara sin que app.js tenga que volver a pasarlos.
+    ultimoStart: null
   };
 
   /**
@@ -57,10 +65,18 @@ const CameraService = (() => {
    * @param {HTMLVideoElement} opts.videoEl - elemento donde se pinta el stream
    * @param {Function} [opts.onReady]       - llamado cuando el primer frame está listo
    * @param {Function} [opts.onError]       - llamado con ({code, msg}) si falla
+   * @param {string}   [opts.facingMode]    - v2.1.8: 'user' (frontal) o 'environment' (trasera)
    */
-  async function start({ videoEl, onReady, onError }) {
+  async function start(opts) {
+    const { videoEl, onReady, onError } = opts;
     // Si ya había una sesión viva, la cerramos limpio antes de empezar otra.
     if (state.running) stop();
+
+    // v2.1.8 — recordamos con qué arrancamos, para poder cambiar de cámara.
+    if (opts.facingMode === 'user' || opts.facingMode === 'environment') {
+      state.facingMode = opts.facingMode;
+    }
+    state.ultimoStart = opts;
 
     state.sessionId += 1;
     const mySession = state.sessionId;
@@ -77,11 +93,12 @@ const CameraService = (() => {
 
     let stream;
     try {
-      // 'user' = cámara frontal; ideal para selfie/poses.
-      // Pedimos resolución modesta por perf en móviles.
+      // v2.1.8 — facingMode configurable: 'user' = frontal (selfie),
+      // 'environment' = trasera. En desktop suele haber una sola cámara y
+      // el navegador ignora la preferencia, lo cual está bien.
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: 'user',
+          facingMode: state.facingMode,
           width:  { ideal: 640 },
           height: { ideal: 480 }
         },
@@ -115,6 +132,54 @@ const CameraService = (() => {
   }
 
   /**
+   * v2.1.8 — Cambia entre cámara frontal y trasera (tipo WhatsApp).
+   * Re-arranca el stream con el facingMode opuesto, reusando los callbacks
+   * del último start(). Devuelve el modo nuevo, o null si no se pudo.
+   * @returns {Promise<'user'|'environment'|null>}
+   */
+  async function cambiarCamara() {
+    if (!state.ultimoStart) return null;
+    const nuevo = state.facingMode === 'user' ? 'environment' : 'user';
+    const opts = { ...state.ultimoStart, facingMode: nuevo };
+    const anterior = state.facingMode;
+
+    let fallo = false;
+    await start({
+      ...opts,
+      onError: (e) => {
+        // Si la cámara pedida no existe (ej. desktop sin trasera), volvemos
+        // a la anterior para no dejar al jugador sin imagen.
+        fallo = true;
+        console.warn('CameraService.cambiarCamara:', e);
+      }
+    });
+    if (fallo) {
+      await start({ ...state.ultimoStart, facingMode: anterior });
+      return null;
+    }
+    return nuevo;
+  }
+
+  /** v2.1.8 — Cámara activa: 'user' (frontal) o 'environment' (trasera). */
+  function camaraActual() { return state.facingMode; }
+
+  /**
+   * v2.1.8 — ¿Hay más de una cámara en el dispositivo? Sirve para ocultar
+   * el botón de cambio en equipos con una sola (típico desktop).
+   * No pide permisos: enumerateDevices funciona igual (sin labels).
+   * @returns {Promise<boolean>}
+   */
+  async function hayVariasCamaras() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return false;
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      return devs.filter(d => d.kind === 'videoinput').length > 1;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Cierra el stream y limpia el <video>. Idempotente.
    * CRÍTICO llamar esto al salir de la pantalla de cámara: sin stop() el
    * LED de la webcam queda prendido y otras apps no pueden usarla.
@@ -133,7 +198,7 @@ const CameraService = (() => {
     }
   }
 
-  return { start, stop };
+  return { start, stop, cambiarCamara, camaraActual, hayVariasCamaras };
 })();
 
 window.CameraService = CameraService;
