@@ -1,5 +1,9 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.2.0-web — FIX loop de cuenta atrás en el 2º jugador: si al llegar a 0
+     el duelo no arrancaba (sin sesión), los heartbeats re-arrancaban la
+     cuenta infinitamente. Flag mmCuentaDisparada + aviso visible y vuelta
+     al lobby en vez de quedar muerto en silencio.
    v2.1.9-web — FIX cuenta atrás en loop (se reiniciaba con cada heartbeat
      de Firebase: 30→29→28→30...) + la pantalla de espera ahora muestra QUÉ
      pose hace el rival y su banda en vivo.
@@ -23,6 +27,10 @@
    ============================================================ */
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.2.0-web — FIX loop de cuenta atrás en el 2º jugador: si al llegar a 0
+     el duelo no arrancaba (sin sesión), los heartbeats re-arrancaban la
+     cuenta infinitamente. Flag mmCuentaDisparada + aviso visible y vuelta
+     al lobby en vez de quedar muerto en silencio.
    v2.1.9-web — FIX cuenta atrás en loop (se reiniciaba con cada heartbeat
      de Firebase: 30→29→28→30...) + la pantalla de espera ahora muestra QUÉ
      pose hace el rival y su banda en vivo.
@@ -995,6 +1003,7 @@ function escaparHtml(str) {
 /* ---- Matchmaking (sin cambios) ---- */
 let mmUnsubSala = null;
 let mmCuentaId  = null;   // v2.1.9 — id del interval de la cuenta atrás
+let mmCuentaDisparada = false;  // v2.2.0 — ya se intentó arrancar el duelo
 let mmSalaId    = null;
 
 function mmMostrarPanel(nombre) {
@@ -1052,7 +1061,7 @@ function mmEscucharSala() {
       // v2.1.9 FIX — arrancarCuentaAtras() SOLO la primera vez. Antes se
       // llamaba en cada update de Firebase (heartbeats cada 3s) y el contador
       // se reiniciaba solo: 30 → 29 → 28 → 30 → 29... loop infinito.
-      if (mmCuentaId === null) arrancarCuentaAtras();
+      if (mmCuentaId === null && !mmCuentaDisparada) arrancarCuentaAtras();
     }
   });
 }
@@ -1061,6 +1070,7 @@ function mmEscucharSala() {
    "¡Empezar duelo!", arranca solo. Evita quedarse trabado esperando el click. */
 function arrancarCuentaAtras(segundos = 30) {
   detenerCuentaAtras();
+  mmCuentaDisparada = false;
   let restante = segundos;
   const lbl = document.getElementById('mm-btn-empezar');
   const textoBase = '¡Empezar duelo!';
@@ -1072,7 +1082,11 @@ function arrancarCuentaAtras(segundos = 30) {
     restante--;
     if (restante <= 0) {
       detenerCuentaAtras();
-      if (lbl) lbl.textContent = textoBase;
+      // v2.2.0 — marcamos que ya se disparó, para que los updates de Firebase
+      // que sigan llegando NO vuelvan a arrancar la cuenta (loop infinito que
+      // se veía en el celular: 30→...→0→30→...).
+      mmCuentaDisparada = true;
+      if (lbl) lbl.textContent = 'Entrando…';
       mmEmpezarDuelo();   // arranca solo
       return;
     }
@@ -1245,7 +1259,17 @@ function irAVeredictoOnline(est) {
 function mmEmpezarDuelo() {
   detenerCuentaAtras();   // v1.8.1 — frena el auto-inicio si arrancamos a mano
   const sesion = OnlineService.sesionActual();
-  if (!sesion) return;
+  dbg('mmEmpezarDuelo: sesion=' + JSON.stringify(sesion));
+  if (!sesion) {
+    // v2.2.0 — Sin sesión no hay duelo online. Antes salíamos en silencio y
+    // el jugador quedaba mirando el panel para siempre (o en loop de cuenta).
+    // Ahora avisamos y volvemos al lobby para que pueda reintentar.
+    dbg('✗ SIN SESION — no se puede arrancar el duelo online');
+    mmCuentaDisparada = false;
+    mmError('Se perdió la conexión con la sala. Probá buscar rival de nuevo.');
+    mmMostrarPanel('mm-panel-elegir');
+    return;
+  }
   const perfil      = Store.obtenerPerfil();
   const rivalNombre = document.getElementById('mm-nombre-rival').textContent;
   const nombreA     = sesion.rol === 'A' ? perfil.nombre : rivalNombre;
@@ -1294,6 +1318,9 @@ function limpiarMatchmaking() {
 
 function iniciarMatchmaking() {
   mmMostrarPanel('mm-panel-elegir');
+  // v2.2.0 — estado limpio de la cuenta atrás en cada entrada al lobby.
+  detenerCuentaAtras();
+  mmCuentaDisparada = false;
   if (!OnlineService.estaDisponible()) {
     window.addEventListener('firebase-ready', () => OnlineService.init(), { once: true });
     OnlineService.init();
