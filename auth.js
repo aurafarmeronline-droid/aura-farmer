@@ -1,5 +1,7 @@
 /* ============================================================
    AURA FARMER — auth.js
+   v0.4-web (v2.2.1) — onCambioSesion no dispara hasta que Firebase resuelve
+     el estado (flag authResuelto). Evita mandar a "identidad" con sesión activa.
    v0.3-web (v2.1.7) — regla de conflicto: si la nube tiene un nombre
      residual "Usuario XXXX" (del bug viejo) y lo local trae el nombre real
      de Google, se corrige y se re-sube. Rompe el círculo del nombre pegado.
@@ -133,6 +135,7 @@ const AuthService = (() => {
 
       F.AUTH.onAuthStateChanged(auth, (fbUser) => {
         usuario = proyectarUsuario(fbUser);
+        authResuelto = true;   // v2.2.1 — Firebase ya resolvió el estado real
         listeners.forEach(cb => { try { cb(usuario); } catch (e) { console.warn('AuthService listener:', e); } });
       });
 
@@ -147,10 +150,18 @@ const AuthService = (() => {
   function estaLogueado()   { return !!usuario; }
   function usuarioActual()  { return usuario; }
 
+  // v2.2.1 — bandera: ¿Firebase ya resolvió el estado de auth al menos una vez?
+  // onAuthStateChanged SIEMPRE dispara una vez al cargar (con el usuario real o
+  // null). Hasta ese momento NO sabemos si hay sesión, así que no avisamos un
+  // 'null' prematuro que mandaría a la pantalla de identidad por error.
+  let authResuelto = false;
+
   /** Avisa cuando cambia el estado de sesión (login/logout). Devuelve función para desuscribirse. */
   function onCambioSesion(callback) {
     listeners.add(callback);
-    if (usuario !== undefined) callback(usuario);   // estado inicial inmediato
+    // Solo damos el estado inicial si Firebase YA lo resolvió. Si todavía no,
+    // el callback se disparará cuando onAuthStateChanged corra (abajo).
+    if (authResuelto) callback(usuario);
     return () => listeners.delete(callback);
   }
 

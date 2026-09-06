@@ -1,14 +1,8 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
-   v2.2.0-web — FIX loop de cuenta atrás en el 2º jugador: si al llegar a 0
-     el duelo no arrancaba (sin sesión), los heartbeats re-arrancaban la
-     cuenta infinitamente. Flag mmCuentaDisparada + aviso visible y vuelta
-     al lobby en vez de quedar muerto en silencio.
-   v2.1.9-web — FIX cuenta atrás en loop (se reiniciaba con cada heartbeat
-     de Firebase: 30→29→28→30...) + la pantalla de espera ahora muestra QUÉ
-     pose hace el rival y su banda en vivo.
-   v2.1.8-web — Botón de cambiar cámara (frontal/trasera) en el viewfinder.
-     Reengancha la detección al stream nuevo y quita el espejado en trasera.
+   v2.2.1-web — FIX login persistente: ya no pide login cada vez si ya estás
+     logueado. La causa era que onCambioSesion disparaba null antes de que
+     Firebase resolviera la sesión. Ahora espera el 1er estado real de Auth.
    v2.1.6-web — Sesión Google PERSISTENTE (espera onCambioSesion antes de
      decidir pantalla; ya no se pierde al cerrar pestaña ni cae a invitado) +
      editar nombre/foto sube a la nube si hay sesión.
@@ -27,15 +21,9 @@
    ============================================================ */
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
-   v2.2.0-web — FIX loop de cuenta atrás en el 2º jugador: si al llegar a 0
-     el duelo no arrancaba (sin sesión), los heartbeats re-arrancaban la
-     cuenta infinitamente. Flag mmCuentaDisparada + aviso visible y vuelta
-     al lobby en vez de quedar muerto en silencio.
-   v2.1.9-web — FIX cuenta atrás en loop (se reiniciaba con cada heartbeat
-     de Firebase: 30→29→28→30...) + la pantalla de espera ahora muestra QUÉ
-     pose hace el rival y su banda en vivo.
-   v2.1.8-web — Botón de cambiar cámara (frontal/trasera) en el viewfinder.
-     Reengancha la detección al stream nuevo y quita el espejado en trasera.
+   v2.2.1-web — FIX login persistente: ya no pide login cada vez si ya estás
+     logueado. La causa era que onCambioSesion disparaba null antes de que
+     Firebase resolviera la sesión. Ahora espera el 1er estado real de Auth.
    v2.1.6-web — Sesión Google PERSISTENTE (espera onCambioSesion antes de
      decidir pantalla; ya no se pierde al cerrar pestaña ni cae a invitado) +
      editar nombre/foto sube a la nube si hay sesión.
@@ -196,15 +184,6 @@ function startFarmeo() {
       errMsg.textContent = msg;
     }
   });
-
-  // v2.1.8 — El botón de cambiar cámara solo tiene sentido si hay más de una
-  // (típico en celulares). En desktop con una sola webcam queda oculto.
-  const btnFlip = document.getElementById('btn-flip-cam');
-  if (btnFlip && CameraService.hayVariasCamaras) {
-    CameraService.hayVariasCamaras()
-      .then(varias => btnFlip.classList.toggle('hidden', !varias))
-      .catch(() => btnFlip.classList.add('hidden'));
-  }
 }
 
 /* ---- Detección de poses con VisionService ---- */
@@ -262,7 +241,7 @@ function startPoseDetection(video, canvas, poseChip) {
         const ahora = Date.now();
         if (ahora - ultimoEnvioPuntaje > 1500) {
           ultimoEnvioPuntaje = ahora;
-          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre, resultado.banda).catch(() => {});
+          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre).catch(() => {});
         }
       }
 
@@ -273,7 +252,7 @@ function startPoseDetection(video, canvas, poseChip) {
         // rival lo vea crecer en vivo en su pantalla de espera. Una vez por
         // paso (no por frame) para no saturar Firebase.
         if (dueloEsOnline) {
-          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre, resultado.banda).catch(() => {});
+          OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre).catch(() => {});
         }
         // Efecto visual de "pam" (opcional)
         const scoreEl = document.getElementById('hud-score');
@@ -660,34 +639,6 @@ function wireFarmeoUI() {
       vf.requestFullscreen().catch(err => console.warn('Fullscreen no disponible:', err));
     }
   });
-
-  // v2.1.8 — Cambiar cámara frontal/trasera (tipo WhatsApp).
-  on('btn-flip-cam', async () => {
-    const btn = document.getElementById('btn-flip-cam');
-    if (!btn || btn.disabled) return;
-    btn.disabled = true;
-    btn.classList.add('girando');
-    try {
-      const nuevo = await CameraService.cambiarCamara();
-      if (nuevo) {
-        // La cámara se re-arrancó: hay que reenganchar la detección al
-        // stream nuevo (VisionService quedó apuntando al stream viejo).
-        const video    = document.getElementById('viewfinder-video');
-        const canvas   = document.getElementById('viewfinder-canvas');
-        const poseChip = document.getElementById('pose-status');
-        if (window.VisionService) VisionService.stop();
-        if (video && canvas) startPoseDetection(video, canvas, poseChip);
-        // El espejado (selfie) es solo para la frontal; la trasera va normal.
-        const trasera = (nuevo === 'environment');
-        video?.classList.toggle('sin-espejo', trasera);
-        canvas?.classList.toggle('sin-espejo', trasera);
-      }
-    } catch (e) {
-      console.warn('cambiar cámara:', e);
-    } finally {
-      setTimeout(() => { btn.classList.remove('girando'); btn.disabled = false; }, 400);
-    }
-  });
 }
 
 /* ---- Terminar la ronda actual ---- */
@@ -1002,8 +953,6 @@ function escaparHtml(str) {
 
 /* ---- Matchmaking (sin cambios) ---- */
 let mmUnsubSala = null;
-let mmCuentaId  = null;   // v2.1.9 — id del interval de la cuenta atrás
-let mmCuentaDisparada = false;  // v2.2.0 — ya se intentó arrancar el duelo
 let mmSalaId    = null;
 
 function mmMostrarPanel(nombre) {
@@ -1058,19 +1007,16 @@ function mmEscucharSala() {
       document.getElementById('mm-av-rival').textContent    = iniciales(est.rivalNombre);
       document.getElementById('mm-nombre-rival').textContent = est.rivalNombre;
       mmMostrarPanel('mm-panel-listo');
-      // v2.1.9 FIX — arrancarCuentaAtras() SOLO la primera vez. Antes se
-      // llamaba en cada update de Firebase (heartbeats cada 3s) y el contador
-      // se reiniciaba solo: 30 → 29 → 28 → 30 → 29... loop infinito.
-      if (mmCuentaId === null && !mmCuentaDisparada) arrancarCuentaAtras();
+      arrancarCuentaAtras();   // v1.8.1 — 30s y arranca solo
     }
   });
 }
 
 /* v1.8.1 — Cuenta atrás de 30s en el panel "listo". Si nadie aprieta
    "¡Empezar duelo!", arranca solo. Evita quedarse trabado esperando el click. */
+let mmCuentaId = null;
 function arrancarCuentaAtras(segundos = 30) {
   detenerCuentaAtras();
-  mmCuentaDisparada = false;
   let restante = segundos;
   const lbl = document.getElementById('mm-btn-empezar');
   const textoBase = '¡Empezar duelo!';
@@ -1082,11 +1028,7 @@ function arrancarCuentaAtras(segundos = 30) {
     restante--;
     if (restante <= 0) {
       detenerCuentaAtras();
-      // v2.2.0 — marcamos que ya se disparó, para que los updates de Firebase
-      // que sigan llegando NO vuelvan a arrancar la cuenta (loop infinito que
-      // se veía en el celular: 30→...→0→30→...).
-      mmCuentaDisparada = true;
-      if (lbl) lbl.textContent = 'Entrando…';
+      if (lbl) lbl.textContent = textoBase;
       mmEmpezarDuelo();   // arranca solo
       return;
     }
@@ -1213,33 +1155,15 @@ function escucharDueloOnline() {
   });
 }
 
-/** Pinta la pantalla de espera mientras el rival juega su turno.
- *  v2.1.9 — además del puntaje, muestra QUÉ pose está haciendo y cómo le
- *  está saliendo (banda), para que el que espera vea el turno del otro. */
+/** Pinta la pantalla de espera mientras el rival juega su turno. */
 function pintarEsperaRival(est) {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const nombre = est.rivalNombre || 'Rival';
   set('espera-rival-nombre', nombre);
   set('espera-rival-puntaje', est.rivalPuntaje || 0);
   set('espera-rival-avatar', nombre.slice(0, 2).toUpperCase());
-
-  // Qué pose está haciendo ahora.
   const pose = est.rivalPose || est.poseActual;
-  set('espera-rival-pose', pose ? ('Haciendo: ' + pose) : 'Preparándose…');
-
-  // Cómo le está saliendo (PERFECT/GOOD/OK/MISS) con color.
-  const bandaEl = document.getElementById('espera-rival-banda');
-  if (bandaEl) {
-    const b = est.rivalBanda;
-    bandaEl.textContent = b || '';
-    bandaEl.classList.toggle('hidden', !b);
-    const color = b === 'PERFECT' ? 'var(--win)'
-                : b === 'GOOD'    ? 'var(--aura-glow)'
-                : b === 'OK'      ? 'var(--combo)'
-                : b === 'MISS'    ? 'var(--lose)' : 'var(--text-muted)';
-    bandaEl.style.color = color;
-    bandaEl.style.borderColor = color;
-  }
+  set('espera-rival-pose', pose ? ('Haciendo: ' + pose) : '');
 }
 
 /** Cierre sincronizado: ambos ven el mismo veredicto desde Firebase. */
@@ -1259,17 +1183,7 @@ function irAVeredictoOnline(est) {
 function mmEmpezarDuelo() {
   detenerCuentaAtras();   // v1.8.1 — frena el auto-inicio si arrancamos a mano
   const sesion = OnlineService.sesionActual();
-  dbg('mmEmpezarDuelo: sesion=' + JSON.stringify(sesion));
-  if (!sesion) {
-    // v2.2.0 — Sin sesión no hay duelo online. Antes salíamos en silencio y
-    // el jugador quedaba mirando el panel para siempre (o en loop de cuenta).
-    // Ahora avisamos y volvemos al lobby para que pueda reintentar.
-    dbg('✗ SIN SESION — no se puede arrancar el duelo online');
-    mmCuentaDisparada = false;
-    mmError('Se perdió la conexión con la sala. Probá buscar rival de nuevo.');
-    mmMostrarPanel('mm-panel-elegir');
-    return;
-  }
+  if (!sesion) return;
   const perfil      = Store.obtenerPerfil();
   const rivalNombre = document.getElementById('mm-nombre-rival').textContent;
   const nombreA     = sesion.rol === 'A' ? perfil.nombre : rivalNombre;
@@ -1318,9 +1232,6 @@ function limpiarMatchmaking() {
 
 function iniciarMatchmaking() {
   mmMostrarPanel('mm-panel-elegir');
-  // v2.2.0 — estado limpio de la cuenta atrás en cada entrada al lobby.
-  detenerCuentaAtras();
-  mmCuentaDisparada = false;
   if (!OnlineService.estaDisponible()) {
     window.addEventListener('firebase-ready', () => OnlineService.init(), { once: true });
     OnlineService.init();
@@ -1366,6 +1277,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // ya estés logueado en el navegador. Por eso ESPERAMOS a que Auth confirme
   // (onCambioSesion) antes de decidir la pantalla. Si hay sesión → modo cuenta
   // y directo a inicio (con tu nombre/foto de Google). Si no → identidad.
+  // v2.2.1 — LOGIN PERSISTENTE (best practice). Firebase resuelve la sesión
+  // de forma asíncrona vía onAuthStateChanged, que SIEMPRE dispara al menos
+  // una vez con el estado real (logueado o no). El bug anterior era un timeout
+  // de 2.5s que a veces ganaba la carrera y mostraba "identidad" aunque hubiera
+  // sesión. Ahora: esperamos el PRIMER disparo real de Auth (sin timeout que
+  // compita), y solo caemos a "identidad" si Firebase directamente no está.
   let decidido = false;
   const decidirPantalla = (usuario) => {
     if (decidido) return;
@@ -1375,7 +1292,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof Store.fijarModo === 'function') Store.fijarModo('cuenta');
       if (usuario.nombre) Store.guardarNombre(usuario.nombre);
       if (usuario.foto)   Store.guardarFoto(usuario.foto);
-      // Sincronizar con la nube (trae historial/monedas de la cuenta).
       AuthService.sincronizarPerfil(Store.exportarTodo())
         .then(pf => { Store.reemplazarPerfil(pf); informarNivelAOnline(); pintarHome?.(); })
         .catch(() => {});
@@ -1387,20 +1303,27 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const arrancarConAuth = () => {
+    // onCambioSesion → onAuthStateChanged: el primer disparo trae el estado
+    // real ya resuelto (Firebase lee la sesión persistida antes de disparar).
+    // Ese primer disparo decide la pantalla; los siguientes ya no (decidido).
     AuthService.onCambioSesion(decidirPantalla);
-    // Red de seguridad: si Auth no responde en 2.5s (sin Firebase, offline),
-    // no dejamos la app colgada: mostramos identidad.
-    setTimeout(() => decidirPantalla(AuthService.usuarioActual?.() || null), 2500);
+    // Fallback SOLO por si Auth nunca responde (raro): margen amplio de 6s
+    // para no ganarle la carrera a una confirmación de sesión lenta en móvil.
+    setTimeout(() => {
+      if (!decidido) decidirPantalla(AuthService.usuarioActual?.() || null);
+    }, 6000);
   };
 
-  if (window.AuthService && (AuthService.estaDisponible?.() || AuthService.init?.())) {
+  if (window.AuthService && AuthService.estaDisponible?.()) {
+    arrancarConAuth();
+  } else if (window.AuthService && AuthService.init?.()) {
     arrancarConAuth();
   } else if (window.__FIREBASE__) {
     AuthService.init(); arrancarConAuth();
   } else {
     window.addEventListener('firebase-ready', () => { AuthService.init(); arrancarConAuth(); }, { once: true });
-    // Si Firebase nunca llega, a los 2.5s mostramos identidad igual.
-    setTimeout(() => decidirPantalla(null), 2500);
+    // Si Firebase nunca llega (offline / sin SDK), a los 6s → identidad.
+    setTimeout(() => { if (!decidido) decidirPantalla(null); }, 6000);
   }
 });
 

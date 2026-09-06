@@ -4,7 +4,9 @@
  * We Do — dtp & ele · Aura Farmer Web
  *
  * CHANGELOG
- *   v1.0.0-web (v1.2.2 del proyecto) — Primera versión. Reproductor real con
+ *   v1.1.0-web (v2.2.1) — Primera pista real activada: music/audio track1.mp3.
+     Para sumar más, agregar entradas al array PLAYLIST.
+   v1.0.0-web (v1.2.2 del proyecto) — Primera versión. Reproductor real con
  *     <audio>, playlist declarativa, fondo por pista, barra de progreso
  *     clickeable, mute y "boost" visual. Degrada solo si no hay archivos.
  *
@@ -46,15 +48,18 @@ const MusicPlayer = (() => {
    * ------------------------------------------------------------------------*/
   const PLAYLIST = [
     {
-      id: 'demo',
-      titulo: 'BRAZILIAN PHONK',
-      subtitulo: 'PHONK BRASILEIRO 2025 🔥',
-      meta: 'Playlist • sin archivos todavía',
+      id: 'track1',
+      titulo: 'AURA BOOSTER',
+      subtitulo: 'PHONK ENERGY 🔥',
+      meta: 'Pista 1 • sin copyright',
       autor: 'We Do',
       tag: 'PHONK ENERGY',
-      boost: 0.62,
-      src: null,                 // ← poner 'music/tuTema.mp3' cuando exista
-      fondo: null,               // ← poner 'music/tuFondo.jpg' o .mp4
+      boost: 0.72,
+      // v2.2.1 — primera pista real. Nombre sin espacios ni mayúsculas
+      // (best practice para assets web: evita problemas de URL y de
+      // servidores case-sensitive como GitHub Pages). Va en /music/ del repo.
+      src: 'music/track1.mp3',
+      fondo: null,               // ← podés poner 'music/track1.jpg' o .mp4 después
       fondoTipo: 'imagen'
     }
   ];
