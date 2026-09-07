@@ -1,5 +1,9 @@
 /* ============================================================
    AURA FARMER — style.css
+   v2.2.2-web — .player con min-height:170px propio (refuerzo). La caja
+     medía 2px de alto en el navegador real pese a que .player__grid ya
+     tenía min-height:110px. No se identificó la causa exacta; este
+     cambio fuerza altura visible sin tocar nada más.
    v2.1.8-web — botón .vf-flip (cambiar cámara) + clase .sin-espejo.
    v1.8.1-web — Fix cámara chica en móvil: viewfinder con min-height
      340px y aspect-ratio 3/4 (antes se aplastaba a una franja fina
@@ -1034,6 +1038,11 @@ body{
   overflow:hidden;
   border:1px solid rgba(245,166,35,0.35);
   background:#120A0A;
+  /* v2.2.2 — refuerzo: antes solo .player__grid tenía min-height, y en el
+     navegador de Maxi la caja completa medía 2px de alto (causa no
+     identificada con certeza). Este min-height en el contenedor raíz
+     garantiza que se vea sí o sí, sin depender de que el hijo lo fuerce. */
+  min-height:170px;
 }
 /* Fondo: acá entra la imagen o el <video> que suba Maxi (player.js lo setea). */
 .player__bg{
