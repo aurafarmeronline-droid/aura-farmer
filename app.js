@@ -1,5 +1,23 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.2.5-web — SALIR DEL DUELO:
+     · abandonarDuelo() (nueva): confirm() → si es online, fuerza mi derrota
+       vía OnlineService.cerrarConResultado(rolRival) y me pinto el mismo
+       veredicto ya (sin esperar el roundtrip); si es local, solo resetea.
+       Reemplaza el hardcode viejo de op-abandonar (que no confirmaba ni
+       avisaba al rival). Botón "Salir" nuevo en screen-farmeo y
+       screen-espera (esta última no tenía NINGUNA salida antes).
+     · pintarVeredicto(ganadorForzado): el ganador ahora puede venir FORZADO
+       (abandono) en vez de calculado siempre por puntaje — así alguien que
+       va ganando pero abandona, pierde igual. Sin argumento, mismo cálculo
+       de siempre (no rompe el cierre normal).
+     · escucharDueloOnline(): victoria automática por abandono — si
+       est.rivalConectado cae (heartbeat > 12s, ya calculado en online.js)
+       mientras estado==='jugando', cierro yo con cerrarConResultado(miRol).
+       Cubre cierre de pestaña/pérdida de conexión/"atrás" del navegador sin
+       tocar beforeunload ni rutas nuevas.
+     · mmEscucharSala(): llama OnlineService.cancelarRemocionSala() apenas
+       detecta rivalPresente (ver online.js v0.17 para el porqué).
    v2.2.4-web — RONDAS: cada duelo (local y online) pasa de 1 turno por
      jugador a RONDAS_TOTAL=3, de DURACION_RONDA_MS=30s fijos c/u, alternando
      A→B→A→B→A→B. Si la coreo termina antes de los 30s, se reinicia sola sin
@@ -142,6 +160,10 @@ function showScreen(id) {
 let dueloState = null;
 let dueloEsOnline = false;      // v1.5.1 — true si el duelo actual es multiplayer sincronizado
 let miRolOnline = null;         // 'A' o 'B' — mi rol en el duelo online
+// v2.2.5 — guard para no disparar cerrarConResultado() más de una vez
+// mientras espero que ese mismo update() vuelva como estado='terminado'
+// (escucharDueloOnline sigue recibiendo snapshots viejos mientras tanto).
+let cerrandoPorAbandono = false;
 let dueloUnsub = null;          // desuscriptor de la escucha del duelo online
 let esperandoRival = false;     // true mientras miro al rival jugar su turno
 let rivalYaJugoOnline = false;  // v1.6.1 — el rival ya cerró su turno (flag Firebase)
@@ -701,7 +723,9 @@ function wireFarmeoUI() {
 
   on('op-ranking',   () => { cerrarTodosLosDrawers(); showScreen('screen-ranking'); });
   on('op-historial', () => { cerrarTodosLosDrawers(); showScreen('screen-historial'); });
-  on('op-abandonar', () => { cerrarTodosLosDrawers(); showScreen('screen-inicio'); });
+  on('op-abandonar', abandonarDuelo);   // v2.2.5 — antes salía sin confirmar ni avisar al rival
+  on('btn-salir-farmeo',  abandonarDuelo);   // v2.2.5 — botón nuevo en screen-farmeo
+  on('btn-salir-espera',  abandonarDuelo);   // v2.2.5 — botón nuevo en screen-espera (no tenía salida)
 
   // Fondo del drawer = cerrar (solo si se toca el fondo, no el panel).
   ['chat-drawer', 'menu-drawer', 'info-drawer'].forEach(id => {
@@ -793,6 +817,43 @@ function stopFarmeo() {
   coreoActual = null;
 }
 
+/* ---- v2.2.5 — Abandonar el duelo a propósito (botón "Salir") ---- */
+/**
+ * Confirma y cierra el duelo actual declarando MI derrota.
+ *   · Online: fuerzo cerrarConResultado(rolRival) — el rival lo recibe por
+ *     escucharSala() como cualquier cierre normal — y me pinto YA el mismo
+ *     veredicto acá (sin esperar el roundtrip de Firebase).
+ *   · Local: no hay rival real, solo reseteo (no toca Store: no hay
+ *     "derrota" que registrar contra nadie).
+ * Sin duelo activo (o ya terminado), no hace nada raro: solo navega.
+ */
+function abandonarDuelo() {
+  if (!dueloState || dueloState.terminado) {
+    cerrarTodosLosDrawers();
+    showScreen('screen-inicio');
+    return;
+  }
+
+  if (!window.confirm('¿Seguro que querés salir? Vas a perder el duelo.')) return;
+
+  cerrarTodosLosDrawers();
+  stopFarmeo();   // corta cámara/visión/música/timers, sea duelo online o local
+
+  if (dueloEsOnline) {
+    const rolRival = miRolOnline === 'A' ? 'B' : 'A';
+    // Dejo de escuchar ANTES de escribir: ya decidí el cierre yo mismo, no
+    // quiero que mi propio update() me vuelva a disparar irAVeredictoOnline.
+    if (dueloUnsub) { dueloUnsub(); dueloUnsub = null; }
+    if (window.SpectatorService) SpectatorService.cerrarConexion();
+    OnlineService.cerrarConResultado(rolRival).catch(() => {});
+    pintarVeredicto(rolRival);   // hace TODO el cleanup online (salir/heartbeat/flags)
+    showScreen('screen-veredicto');
+  } else {
+    dueloState = null;
+    showScreen('screen-inicio');
+  }
+}
+
 /* ---- Traspaso (pantalla intermedia) ---- */
 function pintarTraspaso(turnoSiguiente) {
   const nombre = dueloState.jugadores[turnoSiguiente].nombre;
@@ -807,7 +868,13 @@ function pintarTraspaso(turnoSiguiente) {
 }
 
 /* ---- Veredicto final ---- */
-function pintarVeredicto() {
+/**
+ * @param {'A'|'B'|'empate'} [ganadorForzado] - v2.2.5: si viene, ES el
+ *   resultado final (rol ABSOLUTO, no "mío") sin importar el puntaje —
+ *   caso abandono: quien se va pierde aunque estuviera arriba. Sin este
+ *   argumento, se calcula por puntaje como siempre (cierre normal).
+ */
+function pintarVeredicto(ganadorForzado) {
   const r = DueloEngine.resolver(dueloState);
   const jA = dueloState.jugadores.A, jB = dueloState.jugadores.B;
 
@@ -819,9 +886,11 @@ function pintarVeredicto() {
   const miPuntaje    = miRol === 'A' ? r.puntajeA : r.puntajeB;
   const rivalPuntaje = miRol === 'A' ? r.puntajeB : r.puntajeA;
   const nombreRival  = dueloState.jugadores[rolRival].nombre;
+  // v2.2.5 — ganador ABSOLUTO: forzado (abandono) o el de siempre (puntaje).
+  const ganadorAbsoluto = ganadorForzado || r.ganador;
   // Resultado desde MI perspectiva para persistir bien (W/L/E correcto).
-  const miResultado = miPuntaje > rivalPuntaje ? 'A'
-                    : rivalPuntaje > miPuntaje ? 'B' : 'empate';
+  const miResultado = ganadorAbsoluto === 'empate' ? 'empate'
+                    : (ganadorAbsoluto === miRol ? 'A' : 'B');
 
   // Persistencia: guardo con MI puntaje como puntajeA (así el perfil suma lo mío).
   const dataFinal = Store.guardarResultado(
@@ -1096,6 +1165,10 @@ function mmEscucharSala() {
   mmUnsubSala = OnlineService.escucharSala((est) => {
     if (!est.existe) return;
     if (est.estado === 'jugando' && est.rivalPresente) {
+      // v2.2.5 — el rival ya está: si YO soy el creador de una sala por
+      // código, esto cancela el onDisconnect(salaRef).remove() que crearSala
+      // dejó armado (ver online.js v0.17). No-op seguro si no aplica.
+      OnlineService.cancelarRemocionSala();
       const perfil = Store.obtenerPerfil();
       document.getElementById('mm-av-yo').textContent       = iniciales(perfil.nombre);
       document.getElementById('mm-nombre-yo').textContent   = perfil.nombre;
@@ -1222,6 +1295,23 @@ function escucharDueloOnline() {
       return;
     }
 
+    // v2.2.5 — VICTORIA POR ABANDONO: el rival perdió heartbeat (>12s, ver
+    // rivalCaido en online.js) mientras el duelo está en curso. Cierro yo
+    // declarándome ganador — cubre cierre de pestaña, wifi caído, "atrás"
+    // del navegador, lo que sea, sin importar cómo se fue. SIEMPRE corto acá
+    // (return) mientras el rival esté caído: si no, en el snapshot SIGUIENTE
+    // (mi propio heartbeat cada 3s) cerrandoPorAbandono ya estaría en true y
+    // caería en la lógica normal de turnos de más abajo (reabriría la
+    // cámara con el duelo ya cerrándose). El guard solo evita reintentar el
+    // WRITE, no la salida temprana.
+    if (est.estado === 'jugando' && !est.rivalConectado) {
+      if (!cerrandoPorAbandono) {
+        cerrandoPorAbandono = true;
+        OnlineService.cerrarConResultado(miRolOnline).catch(() => { cerrandoPorAbandono = false; });
+      }
+      return;
+    }
+
     // v2.2.4 — Si YO ya completé mis RONDAS_TOTAL rondas y ahora veo que el
     // rival TAMBIÉN completó las suyas (su flag llegó tarde), cierro el
     // duelo yo. Cubre la carrera de "los dos terminan casi a la vez" sin que
@@ -1281,7 +1371,11 @@ function irAVeredictoOnline(est) {
     if (typeof est.rivalAcumulado === 'number') dueloState.jugadores[rolRival].rondas = [est.rivalAcumulado];
     dueloState.terminado = true;
   }
-  pintarVeredicto();
+  // v2.2.5 — uso el ganador que Firebase ya trae en resultado.ganador: en un
+  // cierre normal coincide con el cálculo por puntaje (no cambia nada); en
+  // un cierre por abandono (mío o del rival) es el que manda, aunque el
+  // puntaje diga otra cosa.
+  pintarVeredicto(est.resultado && est.resultado.ganador);
   showScreen('screen-veredicto');
 }
 
@@ -1302,6 +1396,7 @@ function mmEmpezarDuelo() {
   miRolOnline   = sesion.rol;
   rivalYaJugoOnline = false;   // v1.6.1 — reset de flags de turno
   rivalRondasJugadas = 0;      // v2.2.4 — reset del conteo de rondas
+  cerrandoPorAbandono = false; // v2.2.5 — reset por si quedó pegado de un duelo anterior
 
   // F5 Fase 2a — arranca la conexión WebRTC UNA vez por duelo (no por
   // turno). Vive independiente de qué pantalla se esté mirando.

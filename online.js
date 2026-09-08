@@ -67,6 +67,13 @@
      2) Pegar la firebaseConfig real en FIREBASE_CONFIG (abajo).
    ============================================================ */
 
+/* v0.17-web (v2.2.5) — F4 fix: cancelarRemocionSala() cancela el
+ * onDisconnect(salaRef).remove() que crearSala() arma para el jugador A
+ * (pensado solo para "el creador se fue antes de que entre el rival").
+ * Si no se cancela al sumarse B, un A que abandona A MITAD DE DUELO borra
+ * la sala entera y B queda congelado (existe:false, nunca ve veredicto).
+ * Se llama desde mmEscucharSala() en app.js apenas rivalPresente. El
+ * matchmaking automático (crearSalaEmparejada) no tenía este problema. */
 /* v0.16-web (v2.2.4) — F5 FASE 1: canal de señalización para el modo
  * espectador. Nodo salas/{id}/webrtc/{rol}: enviarSenalizacion() (merge en
  * mi rama), escucharSenalizacionRival() (onValue en la del rival),
@@ -666,6 +673,21 @@ const OnlineService = (() => {
   }
 
   /**
+   * F4 — v0.17-web: cancela el onDisconnect(salaRef).remove() que crearSala()
+   * arma para el jugador A. Ese remove() solo debe actuar ANTES de que el
+   * rival se sume (sala abandonada en el lobby); una vez que B está en la
+   * sala, si A se cae en pleno duelo NO queremos borrar la sala entera —
+   * queremos que sea un abandono normal, detectado por heartbeat como
+   * cualquier otro. Llamarlo apenas se detecta rivalPresente. No-op seguro
+   * sin sesión/Firebase, y sin efecto si nunca se armó (rol B, o auto-match).
+   */
+  function cancelarRemocionSala() {
+    if (!disponible || !sesion) return;
+    const { ref, onDisconnect } = fb.DB;
+    onDisconnect(ref(fb.db, 'salas/' + sesion.salaId)).cancel().catch(() => {});
+  }
+
+  /**
    * F4 — SALIR de la sala: corta escucha, heartbeat, marca desconexión y,
    * si la sala queda vacía, la borra. Seguro llamarlo siempre al salir.
    */
@@ -704,7 +726,7 @@ const OnlineService = (() => {
     // sincronización (F3)
     escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado, marcarMiRonda, terminarMiRonda,
     // robustez (F4)
-    iniciarHeartbeat, detenerHeartbeat, salir,
+    iniciarHeartbeat, detenerHeartbeat, salir, cancelarRemocionSala,
     // espectador (F5 — Fase 1: solo canal de datos, ver spectator.js)
     enviarSenalizacion, escucharSenalizacionRival, limpiarSenalizacion,
     // espectador (F5 Fase 2b — esqueleto real)

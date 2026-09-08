@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!-- ============================================================
      AURA FARMER — index.html
+     v1.2.3-web — Botón "Salir" en screen-farmeo (junto a "Terminar turno")
+       y en screen-espera (antes no tenía NINGUNA salida). Ambos disparan
+       abandonarDuelo() en app.js (confirma y cierra para los dos jugadores).
      v1.2.2-web — MEGA UPDATE VISUAL (pantalla FARMEO rediseñada)
        · Topbar con marca AF + título FARMEO + pose actual
        · Tarjeta "MISIÓN ACTUAL" con hexágono de pose, info y Chat
@@ -399,6 +402,8 @@
       <!-- v2.2.4 — F5 modo espectador (Fase 1: placeholder, sin video/esqueleto real todavía) -->
       <div id="espera-espectador" class="card"
            style="margin-top:4px; min-width:180px; text-align:center; font-size:13px; opacity:.85;"></div>
+      <!-- v1.2.3 — antes esta pantalla no tenía ninguna salida -->
+      <button class="btn btn--danger btn--block" id="btn-salir-espera" style="margin-top:4px;">Salir</button>
     </div>
   </section>
 
@@ -528,6 +533,9 @@
          cuando la coreo se completa). Corta y sube el puntaje ya farmeado. -->
     <button class="btn btn--secondary btn--block" id="btn-terminar-turno"
             style="margin-top:10px;">Terminar turno</button>
+    <!-- v1.2.3: salir del duelo entero (no solo del turno). Confirma antes. -->
+    <button class="btn btn--danger btn--block" id="btn-salir-farmeo"
+            style="margin-top:8px;">Salir</button>
 
     <!-- ---- 6. Reproductor (aura booster) ---- -->
     <section class="player" id="player">
