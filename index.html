@@ -396,6 +396,9 @@
         <div id="espera-rival-banda" class="badge hidden"
              style="margin-top:10px; display:inline-block; border:1px solid;"></div>
       </div>
+      <!-- v2.2.4 — F5 modo espectador (Fase 1: placeholder, sin video/esqueleto real todavía) -->
+      <div id="espera-espectador" class="card"
+           style="margin-top:4px; min-width:180px; text-align:center; font-size:13px; opacity:.85;"></div>
     </div>
   </section>
 
@@ -732,6 +735,7 @@
   window.dispatchEvent(new Event('firebase-ready'));
 </script>
 <script src="online.js"></script>
+<script src="spectator.js"></script>
 <script src="auth.js"></script>
 <script type="module" src="vision.js"></script>
 <script src="app.js"></script>

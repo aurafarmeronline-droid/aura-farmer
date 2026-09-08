@@ -67,6 +67,12 @@
      2) Pegar la firebaseConfig real en FIREBASE_CONFIG (abajo).
    ============================================================ */
 
+/* v0.16-web (v2.2.4) — F5 FASE 1: canal de señalización para el modo
+ * espectador. Nodo salas/{id}/webrtc/{rol}: enviarSenalizacion() (merge en
+ * mi rama), escucharSenalizacionRival() (onValue en la del rival),
+ * limpiarSenalizacion() (borra la mía al salir). Sin lógica de offer/
+ * answer/ICE todavía — eso es Fase 2. No toca turnos, rondas ni
+ * matchmaking existentes. */
 /* v0.15-web (v2.2.4) — RONDAS: cada jugador ahora reporta hasta 3 rondas
  * (antes 1 sola). Nodo de jugador suma 'rondasJugadas' (0..3) y 'acumulado'
  * (suma de las rondas ya cerradas); 'puntajeTotal' sigue siendo el puntaje
@@ -143,6 +149,12 @@ const OnlineService = (() => {
   /** El rol del rival dado el mío. */
   function rolRival(rol) {
     return rol === 'A' ? 'B' : 'A';
+  }
+
+  /** F5 — Camino del nodo de señalización WebRTC de UN jugador dentro de la
+   *  sala. Cada jugador escribe solo el suyo (mismo patrón que jugadorA/B). */
+  function caminoWebrtc(salaId, rol) {
+    return 'salas/' + salaId + '/webrtc/' + rol;
   }
 
   /** ¿El rival está caído? Compara su último heartbeat contra ahora. */
@@ -569,6 +581,47 @@ const OnlineService = (() => {
     });
   }
 
+  /* ─────────────────────────────────────────────────────────────
+     F5 — MODO ESPECTADOR (Fase 1: solo el canal de datos).
+     Cada jugador escribe su propia señalización WebRTC en
+     salas/{id}/webrtc/{rol} y lee la del rival. Fase 1 NO negocia
+     offer/answer/ICE todavía (eso es Fase 2) — esto solo deja el
+     canal armado para que spectator.js lo use.
+
+     REGLA DE SEGURIDAD a sumar en Firebase Console (mismo criterio que
+     jugadorA/B: cada uno escribe solo su rama):
+       "webrtc": { "$rol": { ".read": true, ".write": true } }
+     ───────────────────────────────────────────────────────────── */
+
+  /** F5 — Escribe (merge) en MI nodo de señalización. `datos` es libre
+   *  (offer/answer/candidate) — Fase 2 define su forma exacta. */
+  async function enviarSenalizacion(datos) {
+    if (!disponible || !sesion) return;
+    const { ref, update } = fb.DB;
+    await update(ref(fb.db, caminoWebrtc(sesion.salaId, sesion.rol)), {
+      ...datos,
+      actualizadoEn: Date.now()
+    });
+  }
+
+  /** F5 — Escucha el nodo de señalización del RIVAL en vivo. Devuelve
+   *  función para desuscribirse (mismo patrón que escucharSala). */
+  function escucharSenalizacionRival(callback) {
+    if (!disponible || !sesion) return () => {};
+    const { ref, onValue } = fb.DB;
+    const rival = rolRival(sesion.rol);
+    const rivalRef = ref(fb.db, caminoWebrtc(sesion.salaId, rival));
+    return onValue(rivalRef, (snap) => callback(snap.val()));
+  }
+
+  /** F5 — Limpia MI nodo de señalización (llamar al salir del duelo, para
+   *  no dejar basura de una sesión WebRTC vieja si se re-entra a otra sala). */
+  async function limpiarSenalizacion() {
+    if (!disponible || !sesion) return;
+    const { ref, remove } = fb.DB;
+    await remove(ref(fb.db, caminoWebrtc(sesion.salaId, sesion.rol))).catch(() => {});
+  }
+
   /**
    * F4 — HEARTBEAT: late cada HEARTBEAT_S segundos para avisar "sigo vivo".
    * Arrancalo al entrar al duelo, pará al salir.
@@ -630,11 +683,14 @@ const OnlineService = (() => {
     escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado, marcarMiRonda, terminarMiRonda,
     // robustez (F4)
     iniciarHeartbeat, detenerHeartbeat, salir,
+    // espectador (F5 — Fase 1: solo canal de datos, ver spectator.js)
+    enviarSenalizacion, escucharSenalizacionRival, limpiarSenalizacion,
     // puras (export para tests / reuso)
     _puras: {
       configEsPlaceholder, generarCodigoSala, normalizarCodigo,
       codigoValido, rolRival, rivalCaido, proyectarEstado,
-      generarUidBusqueda, decidirMatchmaking, slotEsMio
+      generarUidBusqueda, decidirMatchmaking, slotEsMio,
+      caminoWebrtc
     }
   };
 })();

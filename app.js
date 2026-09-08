@@ -91,8 +91,22 @@ const SCREEN_HOOKS = {
   'screen-historial':   { onShow: pintarHistorial },
   'screen-ranking':     { onShow: pintarRanking },
   'screen-tienda':      { onShow: pintarTienda },
-  'screen-matchmaking': { onShow: iniciarMatchmaking, onHide: limpiarMatchmaking }
+  'screen-matchmaking': { onShow: iniciarMatchmaking, onHide: limpiarMatchmaking },
+  'screen-espera':      { onShow: montarEspectador, onHide: desmontarEspectador }
 };
+
+/** F5 — Fase 1: monta/desmonta el placeholder de modo espectador junto con
+ *  la pantalla de espera (solo en duelo online — offline no hay rival real
+ *  del que ver nada). Sin lógica WebRTC real todavía, ver spectator.js. */
+function montarEspectador() {
+  if (!dueloEsOnline || !window.SpectatorService) return;
+  const el = document.getElementById('espera-espectador');
+  if (el) SpectatorService.montar(el);
+}
+
+function desmontarEspectador() {
+  if (window.SpectatorService) SpectatorService.detener();
+}
 
 let currentScreen = null;
 

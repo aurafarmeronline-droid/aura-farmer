@@ -1,5 +1,8 @@
 /* ============================================================
    AURA FARMER — camera.js
+   v0.4-web (v2.2.4) — streamActual(): expone el MediaStream activo para
+     que spectator.js (F5, Fase 2) reutilice la cámara ya prendida en vez
+     de abrir una captura nueva. Sin cambios en la lógica existente.
    v0.3-web (v2.1.8) — cámara frontal/trasera seleccionable (tipo WhatsApp):
      start({facingMode}), cambiarCamara(), camaraActual(), hayVariasCamaras().
      Si la cámara pedida falla, vuelve sola a la anterior.
@@ -163,6 +166,11 @@ const CameraService = (() => {
   /** v2.1.8 — Cámara activa: 'user' (frontal) o 'environment' (trasera). */
   function camaraActual() { return state.facingMode; }
 
+  /** v0.4-web — F5: expone el MediaStream activo (o null) para que
+   *  spectator.js le haga replaceTrack() al peer sin volver a pedir
+   *  permiso ni abrir una segunda captura de cámara (Fase 2). */
+  function streamActual() { return state.stream; }
+
   /**
    * v2.1.8 — ¿Hay más de una cámara en el dispositivo? Sirve para ocultar
    * el botón de cambio en equipos con una sola (típico desktop).
@@ -198,7 +206,7 @@ const CameraService = (() => {
     }
   }
 
-  return { start, stop, cambiarCamara, camaraActual, hayVariasCamaras };
+  return { start, stop, cambiarCamara, camaraActual, hayVariasCamaras, streamActual };
 })();
 
 window.CameraService = CameraService;
