@@ -105,7 +105,7 @@ function montarEspectador() {
 }
 
 function desmontarEspectador() {
-  if (window.SpectatorService) SpectatorService.detener();
+  if (window.SpectatorService) SpectatorService.desmontar();
 }
 
 let currentScreen = null;
@@ -209,6 +209,10 @@ function startFarmeo() {
       errBox.classList.add('hidden');
       video.style.opacity = '1';
       startPoseDetection(video, canvas, poseChip);
+      // F5 Fase 2a — mi cámara está prendida: el rival empieza a recibir mi video.
+      if (dueloEsOnline && window.SpectatorService) {
+        SpectatorService.actualizarTrackLocal(CameraService.streamActual());
+      }
 
       // v2.2.4 — timer duro de la ronda: 30s fijos desde que la cámara
       // arrancó, sin importar cómo venga la coreo. Es el único que cierra
@@ -761,6 +765,8 @@ function stopFarmeo() {
   rondaDeadline_ms = null;
   if (window.VisionService) VisionService.stop();
   CameraService.stop();
+  // F5 Fase 2a — mi turno terminó: dejo de mandar video (no un frame congelado).
+  if (dueloEsOnline && window.SpectatorService) SpectatorService.actualizarTrackLocal(null);
 
   // v1.2.2: apagar todo lo que la pantalla dejó vivo.
   detenerRelojesFarmeo();
@@ -1254,6 +1260,7 @@ function pintarEsperaRival(est) {
 function irAVeredictoOnline(est) {
   if (dueloUnsub) { dueloUnsub(); dueloUnsub = null; }
   esperandoRival = false;
+  if (window.SpectatorService) SpectatorService.cerrarConexion();
   // Aseguramos los dos puntajes en el dueloState antes de resolver.
   const rolRival = miRolOnline === 'A' ? 'B' : 'A';
   if (dueloState) {
@@ -1283,6 +1290,18 @@ function mmEmpezarDuelo() {
   miRolOnline   = sesion.rol;
   rivalYaJugoOnline = false;   // v1.6.1 — reset de flags de turno
   rivalRondasJugadas = 0;      // v2.2.4 — reset del conteo de rondas
+
+  // F5 Fase 2a — arranca la conexión WebRTC UNA vez por duelo (no por
+  // turno). Vive independiente de qué pantalla se esté mirando.
+  if (window.SpectatorService) {
+    SpectatorService.iniciarConexion({
+      rol: miRolOnline,
+      enviarSenal: OnlineService.enviarSenalizacion,
+      escucharSenalRival: OnlineService.escucharSenalizacionRival,
+      obtenerStreamLocal: () => CameraService.streamActual()
+    });
+  }
+
   if (mmUnsubSala) { mmUnsubSala(); mmUnsubSala = null; }
   escucharDueloOnline();  // re-suscribe con el handler del DUELO (no del lobby)
 

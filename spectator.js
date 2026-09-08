@@ -1,77 +1,77 @@
 /* ============================================================
    AURA FARMER — spectator.js
-   v0.1-web (v2.2.4) — F5 MODO ESPECTADOR, FASE 1: solo estructura.
-   Estado propio y aislado (no pisa duelo.js/online.js/camera.js).
-
-   Máquina de estados de 3 modos:
-     inactivo   → sin sesión de espectador activa.
-     conectando → recién montado, esperando decidir video o esqueleto.
-     video      → conexión WebRTC OK, se ve al rival en vivo.
-     esqueleto  → fallback: no hubo conexión, se dibujan los landmarks.
-
-   FASE 1 (esta entrega): la transición conectando→video/esqueleto es un
-   placeholder con un timeout de demo, SIN RTCPeerConnection real. Deja
-   la estructura + el layout listos para que Fase 2 la reemplace por los
-   eventos reales (oferta/respuesta/ICE vía OnlineService.enviarSenalizacion
-   / escucharSenalizacionRival, más el timeout real de conexión).
+   v0.2-web (v2.2.4) — F5 FASE 2a: WebRTC REAL (video). Un solo
+   RTCPeerConnection persistente por duelo (iniciarConexion, llamado UNA
+   vez al arrancar el duelo, no por turno). actualizarTrackLocal()
+   hace replaceTrack cuando la cámara prende/apaga según el turno.
+   Señalización vía online.js (enviarSenal/escucharSenalRival, inyectados
+   por parámetro — este módulo no conoce OnlineService directamente).
+   Timeout real de 5s si no hay conexión → modo 'esqueleto' (el DIBUJO
+   real del esqueleto con landmarks queda para Fase 2b, sigue siendo
+   placeholder de texto por ahora).
+   v0.1-web (v2.2.4) — máquina de estados de los 3 modos, placeholder.
 
    NO TOCA: duelo.js, farmeo.js, poses.js, vision.js, store.js, auth.js,
-   player.js. Entradas/salidas modulares, dict de estado propio.
+   player.js, online.js (solo LEE las funciones que ya expone).
    ============================================================ */
 
 const SpectatorService = (() => {
   const MODOS = ['inactivo', 'conectando', 'video', 'esqueleto'];
+  const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+  const TIMEOUT_CONEXION_MS = 5000;
 
-  /* Estado interno del módulo. Aislado, no pisa nada de otros módulos. */
   const state = {
     modo: 'inactivo',
     contenedorEl: null,
+    videoEl: null,
+    remoteStream: null,
+    pc: null,
+    unsubSenal: null,
+    candidatosPendientes: [],
+    remoteDescListo: false,
     timeoutId: null,
-    sessionId: 0   // anti-race: cada montar() incrementa
+    sessionId: 0
   };
 
-  /* ═══════════════════════════════════════════════════════════
-     LÓGICA PURA (sin DOM, sin Firebase) — testeable con Node directo.
-     ═══════════════════════════════════════════════════════════ */
-
-  /** Transición de la máquina de estados. Eventos: 'iniciar' | 'conexion-ok'
-   *  | 'timeout' | 'detener'. Puro: mismo input siempre da mismo output. */
   function siguienteModo(modoActual, evento) {
     switch (evento) {
-      case 'iniciar':
-        return 'conectando';
-      case 'conexion-ok':
-        // Solo "sube" a video si todavía estábamos decidiendo. Si ya
-        // caímos a esqueleto (o ya estábamos en video), no hay vuelta atrás
-        // en Fase 1 — evita parpadeos si un evento tardío llega de más.
-        return modoActual === 'conectando' ? 'video' : modoActual;
-      case 'timeout':
-        return modoActual === 'conectando' ? 'esqueleto' : modoActual;
-      case 'detener':
-        return 'inactivo';
-      default:
-        return modoActual;
+      case 'iniciar':     return 'conectando';
+      case 'conexion-ok': return modoActual === 'conectando' ? 'video' : modoActual;
+      case 'timeout':     return modoActual === 'conectando' ? 'esqueleto' : modoActual;
+      case 'detener':     return 'inactivo';
+      default:            return modoActual;
     }
   }
 
-  /** Texto de placeholder por modo (Fase 1 — Fase 2 reemplaza 'video' por
-   *  el <video> real y 'esqueleto' por el canvas dibujando landmarks). */
   function textoPlaceholder(modo) {
     switch (modo) {
       case 'conectando': return 'Conectando con el rival…';
-      case 'video':       return 'Video en vivo (Fase 2)';
-      case 'esqueleto':   return 'Esqueleto en vivo (Fase 2)';
+      case 'esqueleto':   return 'Esqueleto en vivo (Fase 2b)';
       default:            return '';
     }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     DOM — recibe el contenedor ya resuelto (mismo criterio que
-     CameraService: no busca IDs por su cuenta, se lo pasan armado).
-     ═══════════════════════════════════════════════════════════ */
+  function necesitaBuffer(remoteDescListo) {
+    return !remoteDescListo;
+  }
 
   function pintar() {
     if (!state.contenedorEl) return;
+    if (state.modo === 'video' && state.remoteStream) {
+      if (!state.videoEl) {
+        state.videoEl = document.createElement('video');
+        state.videoEl.autoplay = true;
+        state.videoEl.playsInline = true;
+        state.videoEl.muted = true;
+        state.videoEl.style.width = '100%';
+        state.videoEl.style.borderRadius = '12px';
+        state.contenedorEl.textContent = '';
+        state.contenedorEl.appendChild(state.videoEl);
+      }
+      if (state.videoEl.srcObject !== state.remoteStream) state.videoEl.srcObject = state.remoteStream;
+      return;
+    }
+    state.videoEl = null;
     state.contenedorEl.textContent = textoPlaceholder(state.modo);
     if (state.contenedorEl.dataset) state.contenedorEl.dataset.modo = state.modo;
   }
@@ -82,46 +82,110 @@ const SpectatorService = (() => {
     return state.modo;
   }
 
-  /**
-   * Arranca el modo espectador en el contenedor dado. Cierra cualquier
-   * sesión previa antes de empezar (idempotente, como CameraService.start).
-   * @param {HTMLElement} contenedorEl - dónde pintar el placeholder/video/esqueleto
-   * @param {Object} [opts]
-   * @param {number} [opts.demoTimeoutMs=5000] - FASE 1: tiempo antes de caer
-   *   a 'esqueleto' si nadie manda 'conexion-ok'. En Fase 2 esto lo dispara
-   *   el timeout real de conexión WebRTC, no un setTimeout de demo.
-   */
-  function montar(contenedorEl, opts = {}) {
+  function montar(contenedorEl) {
     if (!contenedorEl) return;
-    detener();   // limpio cualquier sesión anterior antes de empezar
-
-    state.sessionId += 1;
-    const miSesion = state.sessionId;
     state.contenedorEl = contenedorEl;
-    cambiarModo('iniciar');
-
-    const demoMs = opts.demoTimeoutMs != null ? opts.demoTimeoutMs : 5000;
-    state.timeoutId = setTimeout(() => {
-      if (miSesion !== state.sessionId) return;   // sesión vieja, ignorar
-      cambiarModo('timeout');
-    }, demoMs);
+    state.videoEl = null;
+    pintar();
   }
 
-  /** Corta la sesión de espectador y limpia el contenedor. Idempotente. */
-  function detener() {
-    if (state.timeoutId) clearTimeout(state.timeoutId);
-    state.timeoutId = null;
-    state.sessionId += 1;   // invalida cualquier timeout pendiente
-    state.modo = 'inactivo';
+  function desmontar() {
     if (state.contenedorEl) state.contenedorEl.textContent = '';
     state.contenedorEl = null;
+    state.videoEl = null;
+  }
+
+  function iniciarConexion(opts) {
+    if (typeof RTCPeerConnection === 'undefined') return;
+    cerrarConexion();
+    state.sessionId += 1;
+    const miSesion = state.sessionId;
+
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    state.pc = pc;
+    state.remoteDescListo = false;
+    state.candidatosPendientes = [];
+    cambiarModo('iniciar');
+
+    pc.addTransceiver('video', { direction: 'sendrecv' });
+    const streamInicial = opts.obtenerStreamLocal && opts.obtenerStreamLocal();
+    if (streamInicial) actualizarTrackLocal(streamInicial);
+
+    pc.ontrack = (e) => {
+      if (miSesion !== state.sessionId) return;
+      state.remoteStream = e.streams[0];
+      cambiarModo('conexion-ok');
+    };
+    pc.onicecandidate = (e) => {
+      if (e.candidate) opts.enviarSenal({ candidate: e.candidate.toJSON() }).catch(() => {});
+    };
+
+    state.unsubSenal = opts.escucharSenalRival(async (datos) => {
+      if (!datos || miSesion !== state.sessionId) return;
+      try {
+        if (datos.offer && opts.rol === 'B' && !pc.currentRemoteDescription) {
+          await pc.setRemoteDescription(datos.offer);
+          state.remoteDescListo = true;
+          state.candidatosPendientes.splice(0).forEach(c => pc.addIceCandidate(c).catch(() => {}));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await opts.enviarSenal({ answer: { type: answer.type, sdp: answer.sdp } });
+        } else if (datos.answer && opts.rol === 'A' && !pc.currentRemoteDescription) {
+          await pc.setRemoteDescription(datos.answer);
+          state.remoteDescListo = true;
+          state.candidatosPendientes.splice(0).forEach(c => pc.addIceCandidate(c).catch(() => {}));
+        }
+        if (datos.candidate) {
+          if (necesitaBuffer(state.remoteDescListo)) state.candidatosPendientes.push(datos.candidate);
+          else await pc.addIceCandidate(datos.candidate).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('SpectatorService señalización:', err);
+      }
+    });
+
+    if (opts.rol === 'A') {
+      pc.createOffer()
+        .then(offer => pc.setLocalDescription(offer).then(() =>
+          opts.enviarSenal({ offer: { type: offer.type, sdp: offer.sdp } })))
+        .catch(err => console.warn('SpectatorService createOffer:', err));
+    }
+
+    state.timeoutId = setTimeout(() => {
+      if (miSesion !== state.sessionId) return;
+      cambiarModo('timeout');
+    }, TIMEOUT_CONEXION_MS);
+  }
+
+  function actualizarTrackLocal(stream) {
+    if (!state.pc) return;
+    const sender = state.pc.getSenders().find(s => !s.track || s.track.kind === 'video');
+    if (!sender) return;
+    const track = stream ? stream.getVideoTracks()[0] : null;
+    sender.replaceTrack(track || null).catch(() => {});
+  }
+
+  function cerrarConexion() {
+    if (state.timeoutId) clearTimeout(state.timeoutId);
+    state.timeoutId = null;
+    if (state.unsubSenal) state.unsubSenal();
+    state.unsubSenal = null;
+    if (state.pc) state.pc.close();
+    state.pc = null;
+    state.remoteStream = null;
+    state.remoteDescListo = false;
+    state.candidatosPendientes = [];
+    state.sessionId += 1;
+    state.modo = siguienteModo(state.modo, 'detener');
+    desmontar();
   }
 
   function obtenerModo() { return state.modo; }
 
   return {
-    montar, detener, obtenerModo,
-    _puras: { siguienteModo, textoPlaceholder, MODOS }
+    montar, desmontar, obtenerModo,
+    iniciarConexion, actualizarTrackLocal, cerrarConexion,
+    _puras: { siguienteModo, textoPlaceholder, necesitaBuffer, MODOS }
   };
 })();
 
