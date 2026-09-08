@@ -142,6 +142,7 @@ const SpectatorService = (() => {
     if (state.contenedorEl) state.contenedorEl.textContent = '';
     state.contenedorEl = null;
     state.videoEl = null;
+    state.canvasEl = null;
   }
 
   function iniciarConexion(opts) {
