@@ -1,5 +1,11 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.2.4-web — RONDAS: cada duelo (local y online) pasa de 1 turno por
+     jugador a RONDAS_TOTAL=3, de DURACION_RONDA_MS=30s fijos c/u, alternando
+     A→B→A→B→A→B. Si la coreo termina antes de los 30s, se reinicia sola sin
+     perder el puntaje. Label "RONDA ACTUAL" ahora muestra la ronda del
+     partido (1/3); los puntitos siguen siendo el progreso de poses. Ver
+     duelo.js (modelo .rondas[]) y online.js (rondasJugadas/acumulado).
    v2.2.1-web — FIX login persistente: ya no pide login cada vez si ya estás
      logueado. La causa era que onCambioSesion disparaba null antes de que
      Firebase resolviera la sesión. Ahora espera el 1er estado real de Auth.
@@ -130,6 +136,17 @@ let rivalNivelRemoto = 0;       // nivel histórico del rival desde la sala
 let farmeoState = null;        // estado interno de Farmeo
 let coreoActual = null;        // referencia al coreo que se está jugando
 let rondaActiva = false;       // para saber si estamos en medio de una ronda
+let rivalRondasJugadas = 0;    // v2.2.4 — rondas que el rival ya cerró (online)
+
+// v2.2.4 — RONDAS: cada jugador juega RONDAS_TOTAL rondas de DURACION_RONDA_MS
+// fijos (antes: 1 sola ronda de duración variable según la coreo). Si la
+// coreo (secuencia de poses) termina antes de tiempo, se reinicia sola sin
+// perder el puntaje acumulado — ver startPoseDetection(). El timer duro de
+// acá abajo es el único que realmente cierra la ronda.
+const RONDAS_TOTAL = DueloEngine.RONDAS_TOTAL;
+const DURACION_RONDA_MS = 30000;
+let rondaDeadline_ms = null;   // performance.now() al que se corta la ronda
+let rondaTimeoutId = null;
 
 /* ---- Inicio de la pantalla de farmeo ---- */
 function startFarmeo() {
@@ -170,6 +187,7 @@ function startFarmeo() {
   errMsg.textContent = 'Iniciando cámara...';
   video.style.opacity = '0';
   poseChip.classList.add('hidden');
+  rondaDeadline_ms = null;   // v2.2.4 — arranca recién cuando la cámara está lista
 
   CameraService.start({
     videoEl: video,
@@ -177,6 +195,15 @@ function startFarmeo() {
       errBox.classList.add('hidden');
       video.style.opacity = '1';
       startPoseDetection(video, canvas, poseChip);
+
+      // v2.2.4 — timer duro de la ronda: 30s fijos desde que la cámara
+      // arrancó, sin importar cómo venga la coreo. Es el único que cierra
+      // la ronda de verdad (ver también el loop en onLandmarks abajo).
+      rondaDeadline_ms = performance.now() + DURACION_RONDA_MS;
+      clearTimeout(rondaTimeoutId);
+      rondaTimeoutId = setTimeout(() => {
+        if (rondaActiva) { rondaActiva = false; terminarRonda(); }
+      }, DURACION_RONDA_MS);
     },
     onError: ({ code, msg }) => {
       errBox.dataset.code = code;
@@ -262,10 +289,20 @@ function startPoseDetection(video, canvas, poseChip) {
         }
       }
 
-      // Si la coreo terminó, cerramos la ronda
+      // v2.2.4 — Si la coreo (secuencia de poses) termina ANTES de los 30s
+      // de la ronda, se reinicia sola desde la pose 1 sin perder el puntaje
+      // acumulado (puntajeTotal no se toca). Se limpia puntajePorPaso para
+      // que el bonus de intensidad de la próxima vuelta no se recalcule
+      // sobre los pasos de vueltas anteriores. Solo el timer duro (arriba)
+      // cierra la ronda de verdad.
       if (resultado.coreoTerminada) {
-        rondaActiva = false;
-        terminarRonda();
+        farmeoState.pasoActual = 0;
+        farmeoState.fase = 'esperando';
+        farmeoState.inicioPaso_ms = null;
+        farmeoState.ultimoFrame_ms = null;
+        farmeoState.buffer = [];
+        farmeoState.puntajePorPaso = [];
+        pintarPoseFarmeo();   // ya repinta ronda-dots adentro
       }
     }
   });
@@ -377,12 +414,13 @@ function pintarMedidor(aura, banda) {
   }
 }
 
-/** Puntaje del rival: el que ya jugó su turno, o 0 si todavía no jugó. */
+/** Puntaje acumulado del rival hasta ahora (suma de sus rondas cerradas). */
 function puntajeRivalActual() {
   if (!dueloState) return 0;
   const yo = dueloState.turnoActual;
   const otro = yo === 'A' ? 'B' : 'A';
-  return dueloState.jugadores[otro].puntaje ?? 0;
+  const rondas = dueloState.jugadores[otro].rondas || [];
+  return rondas.reduce((s, v) => s + (v || 0), 0);
 }
 
 /** Fichas de los dos jugadores del panel VS (nombre, rango, nivel, foto). */
@@ -440,8 +478,16 @@ function pintarRondaDots() {
     d.className = 'ronda-dot' + (i < actual ? ' ronda-dot--hecho' : i === actual ? ' ronda-dot--activo' : '');
     cont.appendChild(d);
   }
+  // v2.2.4 — este label ahora muestra la RONDA DEL PARTIDO (1/3), no la pose
+  // dentro de la coreo (eso lo siguen mostrando los puntitos de arriba). Se
+  // calcula por cuántas rondas ya cerró el jugador que le toca jugar ahora.
   const lbl = document.getElementById('ronda-actual');
-  if (lbl) lbl.textContent = `${Math.min(actual + 1, total)} / ${total}`;
+  if (lbl) {
+    const rol = dueloEsOnline ? miRolOnline : 'A';
+    const jugadas = (dueloState && dueloState.jugadores[rol] && dueloState.jugadores[rol].rondas)
+      ? dueloState.jugadores[rol].rondas.length : 0;
+    lbl.textContent = `${Math.min(jugadas + 1, RONDAS_TOTAL)} / ${RONDAS_TOTAL}`;
+  }
 }
 
 /* ---- Relojes en vivo (independientes del framerate de la cámara) ----
@@ -454,8 +500,12 @@ function arrancarRelojesFarmeo() {
   const pintar = () => {
     if (!farmeoState || !coreoActual) return;
     const ahora = performance.now();
-    const tPose  = tiempoRestantePaso(farmeoState, coreoActual, ahora);
-    const tRonda = tiempoRestanteCoreo(farmeoState, coreoActual, ahora);
+    const tPose = tiempoRestantePaso(farmeoState, coreoActual, ahora);
+    // v2.2.4 — "termina la ronda en" ahora es el timer duro de 30s fijos, no
+    // el tiempo de la coreo (que puede hacer loop varias veces en esos 30s).
+    // Antes de que la cámara esté lista (rondaDeadline_ms===null) muestra el
+    // total fijo como placeholder.
+    const tRonda = rondaDeadline_ms ? Math.max(0, rondaDeadline_ms - ahora) : DURACION_RONDA_MS;
     const elPose  = document.getElementById('vs-timer');
     const elRonda = document.getElementById('ronda-timer');
     if (elPose)  elPose.textContent  = formatearMMSS(tPose);
@@ -643,26 +693,35 @@ function wireFarmeoUI() {
 
 /* ---- Terminar la ronda actual ---- */
 function terminarRonda() {
+  clearTimeout(rondaTimeoutId);   // v2.2.4 — ya se cerró, que no dispare de nuevo
   const puntaje = farmeoState ? Math.round(farmeoState.puntajeTotal) : 0;
   if (!dueloState) dueloState = DueloEngine.crearDuelo();
 
   // v1.5.1 — DUELO ONLINE: Firebase es la fuente de verdad. Subo mi puntaje
   // y cedo el turno. NO decido local si va a traspaso o veredicto: eso lo
   // dicta el estado de la sala, que llega por escucharDueloOnline().
+  // v2.2.4 — ahora son RONDAS_TOTAL rondas por jugador, no 1: recién cierro
+  // con resultado cuando YO llego a mis 3 Y el rival ya llegó a las suyas.
   if (dueloEsOnline) {
-    dueloState.jugadores[miRolOnline].puntaje = puntaje;
+    dueloState.jugadores[miRolOnline].rondas.push(puntaje);
     const rolRival = miRolOnline === 'A' ? 'B' : 'A';
+    const misRondas = dueloState.jugadores[miRolOnline].rondas.length;
 
-    if (rivalYaJugoOnline) {
-      // Los dos jugaron → marco mi turno y cierro el duelo con el resultado.
-      OnlineService.marcarTurnoJugado(puntaje).catch(() => {});
+    if (misRondas >= RONDAS_TOTAL && rivalRondasJugadas >= RONDAS_TOTAL) {
+      // Los dos completaron sus 3 rondas → marco la mía y RECIÉN cuando esa
+      // escritura se confirma, cierro con el resultado. marcarMiRonda hace
+      // un get()+update() (necesita leer el acumulado previo), así que si no
+      // espero, cerrarConResultado podría llegarle al rival ANTES de que mi
+      // última ronda se haya guardado (vería un acumulado viejo en veredicto).
       const r = DueloEngine.resolver(dueloState);
-      OnlineService.cerrarConResultado(r.ganador).catch(() => {});
+      OnlineService.marcarMiRonda(puntaje)
+        .then(() => OnlineService.cerrarConResultado(r.ganador))
+        .catch(() => {});
       // El veredicto llega por escucharDueloOnline (estado='terminado').
     } else {
-      // Falta el rival → marco jugado y paso el turno EN ORDEN (sin carrera),
-      // después quedo esperando. terminarMiTurno hace ambos writes ordenados.
-      OnlineService.terminarMiTurno(puntaje).catch(() => {});
+      // Todavía falta alguna ronda (mía o del rival) → marco y paso el turno
+      // EN ORDEN (sin carrera), después quedo esperando.
+      OnlineService.terminarMiRonda(puntaje).catch(() => {});
       esperandoRival = true;
       pintarEsperaRival({ rivalNombre: dueloState.jugadores[rolRival].nombre, rivalPuntaje: 0 });
       showScreen('screen-espera');
@@ -684,6 +743,8 @@ function terminarRonda() {
 /* ---- Detener farmeo (release recursos) ---- */
 function stopFarmeo() {
   rondaActiva = false;
+  clearTimeout(rondaTimeoutId);   // v2.2.4 — no dejar el timer corriendo fuera de la ronda
+  rondaDeadline_ms = null;
   if (window.VisionService) VisionService.stop();
   CameraService.stop();
 
@@ -721,8 +782,10 @@ function pintarVeredicto() {
   // v1.5.1 — MI rol: en local siempre soy 'A'; en online puede ser 'A' o 'B'.
   const miRol   = dueloEsOnline ? miRolOnline : 'A';
   const rolRival = miRol === 'A' ? 'B' : 'A';
-  const miPuntaje    = dueloState.jugadores[miRol].puntaje ?? 0;
-  const rivalPuntaje = dueloState.jugadores[rolRival].puntaje ?? 0;
+  // v2.2.4 — el modelo pasó de un .puntaje único a .rondas (array de hasta
+  // 3); el total de cada uno ya viene sumado en r.puntajeA/r.puntajeB.
+  const miPuntaje    = miRol === 'A' ? r.puntajeA : r.puntajeB;
+  const rivalPuntaje = miRol === 'A' ? r.puntajeB : r.puntajeA;
   const nombreRival  = dueloState.jugadores[rolRival].nombre;
   // Resultado desde MI perspectiva para persistir bien (W/L/E correcto).
   const miResultado = miPuntaje > rivalPuntaje ? 'A'
@@ -1108,14 +1171,18 @@ function escucharDueloOnline() {
                 'rivalJugo=' + est.rivalJugo, 'estado=' + est.estado,
                 'pantalla=' + currentScreen);
 
-    // Reflejar el puntaje del rival en el dueloState local (para HUD/veredicto).
+    // v2.2.4 — Reflejar el TOTAL del rival en el dueloState local (para
+    // HUD/veredicto): acumulado (rondas ya cerradas) + su puntaje en vivo de
+    // la ronda actual, sin sumarlo dos veces si esa ronda ya cerró (rivalJugo).
     const rolRival = miRolOnline === 'A' ? 'B' : 'A';
-    if (dueloState && typeof est.rivalPuntaje === 'number') {
-      dueloState.jugadores[rolRival].puntaje = est.rivalPuntaje;
+    if (dueloState && typeof est.rivalAcumulado === 'number') {
+      const enVivo = est.rivalJugo ? 0 : (est.rivalPuntaje || 0);
+      dueloState.jugadores[rolRival].rondas = [est.rivalAcumulado + enVivo];
     }
     if (typeof est.rivalNivel === 'number') rivalNivelRemoto = est.rivalNivel;
-    // v1.6.1 — flag robusto de "el rival ya cerró su turno".
+    // v1.6.1 — flag robusto de "el rival ya cerró su turno [ronda actual]".
     rivalYaJugoOnline = !!est.rivalJugo;
+    rivalRondasJugadas = est.rivalRondasJugadas || 0;   // v2.2.4
 
     // El duelo terminó (alguien cerró con resultado): los dos al veredicto.
     if (est.estado === 'terminado') {
@@ -1123,10 +1190,13 @@ function escucharDueloOnline() {
       return;
     }
 
-    // v1.6.1 — Si YO ya jugué y ahora veo que el rival TAMBIÉN jugó (su flag
-    // llegó tarde), cierro el duelo yo. Cubre la carrera de "los dos terminan
-    // casi a la vez" sin que quede nadie trabado esperando.
-    if (est.miJugo && est.rivalJugo && est.estado !== 'terminado' && miRolOnline === 'A') {
+    // v2.2.4 — Si YO ya completé mis RONDAS_TOTAL rondas y ahora veo que el
+    // rival TAMBIÉN completó las suyas (su flag llegó tarde), cierro el
+    // duelo yo. Cubre la carrera de "los dos terminan casi a la vez" sin que
+    // quede nadie trabado esperando. (Antes miraba miJugo/rivalJugo, que
+    // ahora se resetean cada ronda; hay que mirar el conteo completo.)
+    if (est.miRondasJugadas >= RONDAS_TOTAL && est.rivalRondasJugadas >= RONDAS_TOTAL &&
+        est.estado !== 'terminado' && miRolOnline === 'A') {
       const r = DueloEngine.resolver(dueloState);
       OnlineService.cerrarConResultado(r.ganador).catch(() => {});
       return;
@@ -1173,7 +1243,9 @@ function irAVeredictoOnline(est) {
   // Aseguramos los dos puntajes en el dueloState antes de resolver.
   const rolRival = miRolOnline === 'A' ? 'B' : 'A';
   if (dueloState) {
-    if (typeof est.rivalPuntaje === 'number') dueloState.jugadores[rolRival].puntaje = est.rivalPuntaje;
+    // v2.2.4 — a esta altura el duelo ya cerró: el total del rival es su
+    // acumulado de las RONDAS_TOTAL rondas (ya no hay ronda "en vivo").
+    if (typeof est.rivalAcumulado === 'number') dueloState.jugadores[rolRival].rondas = [est.rivalAcumulado];
     dueloState.terminado = true;
   }
   pintarVeredicto();
@@ -1196,6 +1268,7 @@ function mmEmpezarDuelo() {
   dueloEsOnline = true;
   miRolOnline   = sesion.rol;
   rivalYaJugoOnline = false;   // v1.6.1 — reset de flags de turno
+  rivalRondasJugadas = 0;      // v2.2.4 — reset del conteo de rondas
   if (mmUnsubSala) { mmUnsubSala(); mmUnsubSala = null; }
   escucharDueloOnline();  // re-suscribe con el handler del DUELO (no del lobby)
 

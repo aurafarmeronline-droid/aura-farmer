@@ -67,6 +67,19 @@
      2) Pegar la firebaseConfig real en FIREBASE_CONFIG (abajo).
    ============================================================ */
 
+/* v0.15-web (v2.2.4) — RONDAS: cada jugador ahora reporta hasta 3 rondas
+ * (antes 1 sola). Nodo de jugador suma 'rondasJugadas' (0..3) y 'acumulado'
+ * (suma de las rondas ya cerradas); 'puntajeTotal' sigue siendo el puntaje
+ * EN VIVO de la ronda que se está jugando ahora mismo (sin cambios en su
+ * semántica). marcarTurnoJugado/terminarMiTurno se renombran a
+ * marcarMiRonda/terminarMiRonda y ahora acumulan en vez de sobrescribir.
+ * pasarTurno() además limpia el jugoTurno del jugador que RECIBE el turno,
+ * para que su próxima ronda arranque con el flag en false (si no, quedaría
+ * pegado en true desde su ronda anterior y nunca volvería a entrar a jugar).
+ * proyectarEstado() expone miRondasJugadas/rivalRondasJugadas/rivalAcumulado
+ * para que app.js sepa cuándo cerrar el duelo (los DOS en 3 rondas) en vez
+ * de cerrar en la primera ronda como antes. No se tocó matchmaking, heartbeat
+ * ni abandono — cero riesgo de reabrir esos bugs. */
 const OnlineService = (() => {
 
   /* ═══════════════════════════════════════════════════════════
@@ -193,8 +206,12 @@ const OnlineService = (() => {
       turno: sala.turno || 'A',
       esMiTurno: (sala.turno || 'A') === miRol,
       miPuntaje: yo.puntajeTotal ?? 0,
+      miRondasJugadas: yo.rondasJugadas || 0,        // v2.2.4
+      miAcumulado: yo.acumulado || 0,                // v2.2.4
       rivalNombre: rival.nombre || 'Rival',
       rivalPuntaje: rival.puntajeTotal ?? 0,
+      rivalRondasJugadas: rival.rondasJugadas || 0,  // v2.2.4
+      rivalAcumulado: rival.acumulado || 0,          // v2.2.4
       rivalNivel: rival.nivel ?? 0,   // v1.4.1 — nivel histórico del rival
       // v2.1.9 — qué está haciendo el rival AHORA (para la pantalla de espera).
       rivalPose:  rival.poseActual ?? null,
@@ -256,7 +273,9 @@ const OnlineService = (() => {
       nombre: String(nombre || 'Jugador').slice(0, 20),
       conectado: true,
       heartbeat: Date.now(),
-      puntajeTotal: 0,       // puntaje del DUELO en curso
+      puntajeTotal: 0,       // puntaje EN VIVO de la ronda que se está jugando
+      rondasJugadas: 0,      // v2.2.4 — rondas ya cerradas (0..RONDAS_TOTAL)
+      acumulado: 0,          // v2.2.4 — suma de las rondas ya cerradas
       nivel: nivelLocal,     // puntaje HISTÓRICO del perfil (HUD del rival)
       poseActual: null
     };
@@ -493,35 +512,50 @@ const OnlineService = (() => {
     });
   }
 
-  /** F3 — Cede el turno al rival (fuente de verdad única del turno). */
+  /** F3 — Cede el turno al rival (fuente de verdad única del turno).
+   *  v2.2.4 — además limpia el jugoTurno de quien RECIBE el turno: si no,
+   *  le quedaría pegado en true desde su ronda anterior y nunca volvería a
+   *  detectarse "es mi turno Y todavía no jugué" para su ronda nueva. */
   async function pasarTurno() {
     if (!disponible || !sesion) return;
     const { ref, update } = fb.DB;
+    const rival = rolRival(sesion.rol);
     await update(ref(fb.db, 'salas/' + sesion.salaId), {
-      turno: rolRival(sesion.rol)
+      turno: rival,
+      ['jugador' + rival + '/jugoTurno']: false
     });
   }
 
-  /** v1.6.1 — Marca que YO ya jugué mi turno (flag explícito en la sala).
-   *  Distingue "jugó y sacó 0" de "todavía no jugó". */
-  async function marcarTurnoJugado(puntaje) {
+  /** v2.2.4 — Cierra MI ronda actual: suma el puntaje al acumulado y avanza
+   *  el contador de rondas. NO pasa el turno (usar cuando el duelo entero ya
+   *  terminó — mis 3 rondas y las del rival — y lo que sigue es resolver, no
+   *  ceder). Reemplaza a marcarTurnoJugado (v1.6.1), que sobrescribía en vez
+   *  de acumular. */
+  async function marcarMiRonda(puntajeRonda) {
     if (!disponible || !sesion) return;
-    const { ref, update } = fb.DB;
+    const { ref, get, update } = fb.DB;
     const miRef = ref(fb.db, 'salas/' + sesion.salaId + '/jugador' + sesion.rol);
+    const snap = await get(miRef);
+    const actual = snap.exists() ? snap.val() : {};
+    const rondasPrevias  = actual.rondasJugadas || 0;
+    const acumuladoPrevio = actual.acumulado || 0;
+    const puntajeLimpio  = Math.max(0, Math.round(puntajeRonda || 0));
     await update(miRef, {
       jugoTurno: true,
-      puntajeTotal: Math.max(0, Math.round(puntaje || 0)),
+      rondasJugadas: rondasPrevias + 1,
+      acumulado: acumuladoPrevio + puntajeLimpio,
+      puntajeTotal: puntajeLimpio,
       heartbeat: Date.now()
     });
   }
 
-  /** v1.8.1 — Cierra MI turno y cede al rival en operaciones ordenadas:
-   *  primero marca que jugué (con puntaje), después pasa el turno. Así el
-   *  rival, cuando ve turno='suyo', ya ve también mi jugoTurno=true (sin
-   *  carrera entre los dos writes). */
-  async function terminarMiTurno(puntaje) {
+  /** v2.2.4 — Cierra MI ronda Y cedo el turno al rival (caso normal: todavía
+   *  faltan rondas por jugar). Reemplaza a terminarMiTurno (v1.8.1); misma
+   *  idea de orden (primero marco, después cedo) para evitar la carrera
+   *  entre los dos writes. */
+  async function terminarMiRonda(puntajeRonda) {
     if (!disponible || !sesion) return;
-    await marcarTurnoJugado(puntaje);
+    await marcarMiRonda(puntajeRonda);
     await pasarTurno();
   }
 
@@ -593,7 +627,7 @@ const OnlineService = (() => {
     // matchmaking (F2 código de sala + F3 automático)
     crearSala, unirseSala, buscarRival, cancelarBusqueda,
     // sincronización (F3)
-    escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado, marcarTurnoJugado, terminarMiTurno,
+    escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado, marcarMiRonda, terminarMiRonda,
     // robustez (F4)
     iniciarHeartbeat, detenerHeartbeat, salir,
     // puras (export para tests / reuso)
