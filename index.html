@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!-- ============================================================
      AURA FARMER — index.html
+     v1.2.4-web — Botones de screen-veredicto ("Salir"/"Revancha") pasan de
+       data-nav plano a ids (btn-salir-veredicto/btn-revancha) + un div de
+       mensaje (veredicto-revancha-msg) para la espera/rechazo de revancha.
      v1.2.3-web — Botón "Salir" en screen-farmeo (junto a "Terminar turno")
        y en screen-espera (antes no tenía NINGUNA salida). Ambos disparan
        abandonarDuelo() en app.js (confirma y cierra para los dos jugadores).
@@ -650,9 +653,10 @@
     </div>
 
     <div style="display:flex; gap:10px;" class="mt-24">
-      <button class="btn btn--secondary" style="flex:1;" data-nav="screen-inicio">Salir</button>
-      <button class="btn btn--primary" style="flex:1;" data-nav="screen-matchmaking">Revancha</button>
+      <button class="btn btn--secondary" style="flex:1;" id="btn-salir-veredicto">Salir</button>
+      <button class="btn btn--primary" style="flex:1;" id="btn-revancha">Revancha</button>
     </div>
+    <div id="veredicto-revancha-msg" style="text-align:center; font-size:13px; opacity:.8; margin-top:8px;"></div>
   </section>
 
   <!-- ============ RANKING ============ -->

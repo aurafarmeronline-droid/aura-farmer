@@ -1,5 +1,17 @@
 /* ============================================================
    AURA FARMER — app.js (con Farmeo integrado)
+   v2.2.6-web — REVANCHA REAL (mismo rival, misma sala):
+     · pintarVeredicto() ya NO cierra la sesión online (OnlineService.salir())
+       al llegar al veredicto — la deja viva para poder reconectar. El
+       cierre real pasa a salirDeVeredicto() (botón Salir) o al terminar
+       una espera de revancha sin acuerdo (terminarEsperaRevancha).
+     · pedirRevanchaUI(): local arranca de nuevo directo (screen-farmeo);
+       online pide + escucha 30s (manejarRevanchaEstado) — si ambos
+       aceptan, A (single-writer) reinicia la MISMA sala
+       (OnlineService.reiniciarParaRevancha) y los dos reusan
+       mmEmpezarDuelo() tal cual, sin rearmar matchmaking de cero.
+     · Botones "Salir"/"Revancha" de screen-veredicto: pasan de data-nav
+       plano a ids + handlers propios (salirDeVeredicto/pedirRevanchaUI).
    v2.2.5-web — SALIR DEL DUELO:
      · abandonarDuelo() (nueva): confirm() → si es online, fuerza mi derrota
        vía OnlineService.cerrarConResultado(rolRival) y me pinto el mismo
@@ -164,6 +176,15 @@ let miRolOnline = null;         // 'A' o 'B' — mi rol en el duelo online
 // mientras espero que ese mismo update() vuelva como estado='terminado'
 // (escucharDueloOnline sigue recibiendo snapshots viejos mientras tanto).
 let cerrandoPorAbandono = false;
+// v2.2.6 — F6 revancha: dueloEsOnline/miRolOnline se resetean apenas
+// termina el duelo (ver pintarVeredicto), pero la pantalla de veredicto
+// todavía necesita saber "¿esto fue online?" y "¿cómo se llama el rival?"
+// para ofrecer Revancha real. veredictoRevanchaUnsub/TimeoutId son del
+// listener/timer de 30s mientras se espera la respuesta del rival.
+let veredictoFueOnline = false;
+let veredictoRivalNombre = '';
+let veredictoRevanchaUnsub = null;
+let veredictoRevanchaTimeoutId = null;
 let dueloUnsub = null;          // desuscriptor de la escucha del duelo online
 let esperandoRival = false;     // true mientras miro al rival jugar su turno
 let rivalYaJugoOnline = false;  // v1.6.1 — el rival ya cerró su turno (flag Firebase)
@@ -726,6 +747,8 @@ function wireFarmeoUI() {
   on('op-abandonar', abandonarDuelo);   // v2.2.5 — antes salía sin confirmar ni avisar al rival
   on('btn-salir-farmeo',  abandonarDuelo);   // v2.2.5 — botón nuevo en screen-farmeo
   on('btn-salir-espera',  abandonarDuelo);   // v2.2.5 — botón nuevo en screen-espera (no tenía salida)
+  on('btn-salir-veredicto', salirDeVeredicto);   // v2.2.6 — antes era data-nav plano
+  on('btn-revancha',        pedirRevanchaUI);    // v2.2.6 — antes era data-nav a screen-matchmaking
 
   // Fondo del drawer = cerrar (solo si se toca el fondo, no el panel).
   ['chat-drawer', 'menu-drawer', 'info-drawer'].forEach(id => {
@@ -920,16 +943,96 @@ function pintarVeredicto(ganadorForzado) {
   }
 
   // v1.5.1 — cerrar la sesión online del duelo (ya terminó).
+  // v2.2.6 — YA NO llamo a OnlineService.salir() acá: si el jugador pide
+  // Revancha real, necesito la MISMA sesión (salaId/rol) viva para
+  // reconectar con el mismo rival sin rearmar el matchmaking de cero. El
+  // cierre real pasa a terminarVeredictoOnline(), llamado al salir de la
+  // pantalla de veredicto (con o sin haber pedido revancha).
+  veredictoFueOnline = dueloEsOnline;
+  veredictoRivalNombre = nombreRival;
   if (dueloEsOnline) {
     if (dueloUnsub) { dueloUnsub(); dueloUnsub = null; }
     OnlineService.detenerHeartbeat();
-    OnlineService.salir().catch(() => {});
     dueloEsOnline = false;
     miRolOnline = null;
     esperandoRival = false;
   }
 
   dueloState = null;
+  pintarBotonRevancha();   // v2.2.6 — texto/estado inicial del botón, ver más abajo
+}
+
+/* ---- v2.2.6 — F6 Revancha real (mismo rival, misma sala) ---- */
+
+/** Deja el botón/mensaje de Revancha en su estado inicial (se llama al
+ *  pintar cada veredicto nuevo, y al salir de uno con revancha pendiente). */
+function pintarBotonRevancha() {
+  const btn = document.getElementById('btn-revancha');
+  const msg = document.getElementById('veredicto-revancha-msg');
+  if (btn) { btn.disabled = false; btn.textContent = 'Revancha'; }
+  if (msg) msg.textContent = '';
+}
+
+function limpiarEsperaRevancha() {
+  if (veredictoRevanchaUnsub) { veredictoRevanchaUnsub(); veredictoRevanchaUnsub = null; }
+  if (veredictoRevanchaTimeoutId) { clearTimeout(veredictoRevanchaTimeoutId); veredictoRevanchaTimeoutId = null; }
+}
+
+/** Corta la espera de revancha (rival dijo que no, o se agotaron los 30s). */
+function terminarEsperaRevancha(mensaje) {
+  limpiarEsperaRevancha();
+  OnlineService.rechazarRevancha().catch(() => {});   // dejo MI voto en false, prolijo
+  pintarBotonRevancha();
+  const msg = document.getElementById('veredicto-revancha-msg');
+  if (msg) msg.textContent = mensaje;
+}
+
+/** Se llama con cada snapshot de la sala mientras espero que el rival conteste. */
+function manejarRevanchaEstado(est) {
+  if (!est.existe) return;   // sala rara: dejo que el timeout de 30s corte
+
+  if (est.revanchaRival === false) {
+    terminarEsperaRevancha('El rival no quiso revancha.');
+    return;
+  }
+  if (est.revanchaMia === true && est.revanchaRival === true) {
+    limpiarEsperaRevancha();
+    const sesion = OnlineService.sesionActual();
+    // Single-writer: solo A reinicia la sala, para no pisarse con un
+    // update() duplicado si los dos lo dispararan al mismo tiempo.
+    if (sesion && sesion.rol === 'A') OnlineService.reiniciarParaRevancha().catch(() => {});
+    // Reusa TODO el flujo de arranque de duelo online ya probado — solo
+    // necesita el nombre del rival en el mismo lugar que lee mmEmpezarDuelo.
+    const elRival = document.getElementById('mm-nombre-rival');
+    if (elRival) elRival.textContent = veredictoRivalNombre;
+    mmEmpezarDuelo();
+  }
+}
+
+/** Click en "Revancha": local arranca de nuevo directo; online pide y espera. */
+function pedirRevanchaUI() {
+  if (!veredictoFueOnline) {
+    showScreen('screen-farmeo');   // startFarmeo() crea un dueloState nuevo solo
+    return;
+  }
+  if (!OnlineService.sesionActual()) {
+    const msg = document.getElementById('veredicto-revancha-msg');
+    if (msg) msg.textContent = 'Se perdió la conexión con la sala.';
+    return;
+  }
+  const btn = document.getElementById('btn-revancha');
+  if (btn) { btn.disabled = true; btn.textContent = 'Esperando al rival… (30s)'; }
+  OnlineService.pedirRevancha().catch(() => {});
+  veredictoRevanchaUnsub = OnlineService.escucharSala(manejarRevanchaEstado);
+  veredictoRevanchaTimeoutId = setTimeout(() => terminarEsperaRevancha('No hubo respuesta a tiempo.'), 30000);
+}
+
+/** Click en "Salir" desde veredicto: corta revancha pendiente y cierra la
+ *  sesión online de verdad (si había una en pausa esperando revancha). */
+function salirDeVeredicto() {
+  limpiarEsperaRevancha();
+  if (OnlineService.sesionActual()) OnlineService.terminarSesionOnline().catch(() => {});
+  showScreen('screen-inicio');
 }
 
 /* ---- Funciones auxiliares de perfil, ranking, historial (sin cambios) ---- */

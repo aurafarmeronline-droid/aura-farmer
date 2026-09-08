@@ -67,6 +67,13 @@
      2) Pegar la firebaseConfig real en FIREBASE_CONFIG (abajo).
    ============================================================ */
 
+/* v0.18-web (v2.2.6) — F6 REVANCHA REAL: pedirRevancha/rechazarRevancha
+ * (campos planos revanchaA/revanchaB en la sala) + reiniciarParaRevancha
+ * (reusa la MISMA sala/salaId, single-writer rol A). terminarSesionOnline
+ * agrupa "rechazar lo que quedó pendiente + salir()", para llamar UNA vez
+ * al salir de veredicto de verdad. Ver app.js: ya no llama a salir() en
+ * pintarVeredicto, para poder mantener la sesión viva mientras se decide
+ * la revancha. */
 /* v0.17-web (v2.2.5) — F4 fix: cancelarRemocionSala() cancela el
  * onDisconnect(salaRef).remove() que crearSala() arma para el jugador A
  * (pensado solo para "el creador se fue antes de que entre el rival").
@@ -249,7 +256,10 @@ const OnlineService = (() => {
       // rivalConectado: además de existir, su heartbeat está fresco. Sirve para
       // detectar ABANDONO durante el duelo, no para el enganche inicial.
       rivalConectado: !!rival.conectado && !rivalCaido(rival.heartbeat, ahoraMs),
-      resultado: sala.resultado || null
+      resultado: sala.resultado || null,
+      // v0.18-web — F6 revancha: null = todavía no contestó, true/false = sí/no.
+      revanchaMia:   typeof sala['revancha' + miRol]  === 'boolean' ? sala['revancha' + miRol]  : null,
+      revanchaRival: typeof sala['revancha' + otro]   === 'boolean' ? sala['revancha' + otro]   : null
     };
   }
 
@@ -595,6 +605,53 @@ const OnlineService = (() => {
   }
 
   /* ─────────────────────────────────────────────────────────────
+     F6 — v0.18-web: REVANCHA REAL. Usa la MISMA sala (revanchaA/
+     revanchaB, campos planos igual que jugadorA/jugadorB) — por eso la
+     sesión NO se cierra con salir() al llegar al veredicto, para poder
+     seguir escribiendo/escuchando esta misma sala (ver app.js
+     pintarVeredicto/terminarSesionOnline). Nada de esto necesita reglas
+     de Firebase nuevas: "salas/$salaId" con .read/.write true ya cubre
+     cualquier campo plano nuevo bajo la sala.
+     ───────────────────────────────────────────────────────────── */
+
+  /** Marco que YO quiero revancha. */
+  async function pedirRevancha() {
+    if (!disponible || !sesion) return;
+    const { ref, update } = fb.DB;
+    await update(ref(fb.db, 'salas/' + sesion.salaId), { ['revancha' + sesion.rol]: true });
+  }
+
+  /** Marco que NO quiero revancha (rechazo explícito, o al salir sin pedirla:
+   *  así el rival no se queda esperando mis 30s si yo ya me fui). */
+  async function rechazarRevancha() {
+    if (!disponible || !sesion) return;
+    const { ref, update } = fb.DB;
+    await update(ref(fb.db, 'salas/' + sesion.salaId), { ['revancha' + sesion.rol]: false });
+  }
+
+  /** Reinicia LA MISMA sala para jugar de nuevo (mismo rival, salaId igual).
+   *  Solo debe llamarla el jugador A (single-writer: evita un update()
+   *  duplicado si los dos lo dispararan a la vez al ver que ambos aceptaron).
+   *  Reusa los nombres que YA están en la sala — no hace falta pasarlos. */
+  async function reiniciarParaRevancha() {
+    if (!disponible || !sesion) return;
+    const { ref, get, update } = fb.DB;
+    const salaRef = ref(fb.db, 'salas/' + sesion.salaId);
+    const snap = await get(salaRef);
+    const sala = snap.val();
+    if (!sala || !sala.jugadorA || !sala.jugadorB) return;   // sala rara/vacía: no toco nada
+    await update(salaRef, {
+      estado: 'jugando',
+      turno: 'A',
+      jugadorA: nodoJugador(sala.jugadorA.nombre),
+      jugadorB: nodoJugador(sala.jugadorB.nombre),
+      resultado: null,
+      revanchaA: null,
+      revanchaB: null
+    });
+  }
+
+  /* ─────────────────────────────────────────────────────────────
      F5 — MODO ESPECTADOR (Fase 1: solo el canal de datos).
      Cada jugador escribe su propia señalización WebRTC en
      salas/{id}/webrtc/{rol} y lee la del rival. Fase 1 NO negocia
@@ -713,6 +770,18 @@ const OnlineService = (() => {
     sesion = null;
   }
 
+  /**
+   * F6 — v0.18-web: cierre REAL de la sesión online al salir de veredicto
+   * (con o sin haber pedido revancha). Antes de salir() manda un rechazo
+   * de revancha best-effort — así si el rival la pidió y quedó esperando,
+   * no tiene que agotar sus 30s para enterarse de que ya no estoy.
+   */
+  async function terminarSesionOnline() {
+    if (!disponible || !sesion) return;
+    await rechazarRevancha().catch(() => {});
+    await salir();
+  }
+
   function sesionActual() {
     return sesion ? { salaId: sesion.salaId, rol: sesion.rol } : null;
   }
@@ -727,6 +796,8 @@ const OnlineService = (() => {
     escucharSala, enviarPuntaje, pasarTurno, cerrarConResultado, marcarMiRonda, terminarMiRonda,
     // robustez (F4)
     iniciarHeartbeat, detenerHeartbeat, salir, cancelarRemocionSala,
+    // revancha (F6)
+    pedirRevancha, rechazarRevancha, reiniciarParaRevancha, terminarSesionOnline,
     // espectador (F5 — Fase 1: solo canal de datos, ver spectator.js)
     enviarSenalizacion, escucharSenalizacionRival, limpiarSenalizacion,
     // espectador (F5 Fase 2b — esqueleto real)
