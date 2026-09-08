@@ -157,6 +157,12 @@ const OnlineService = (() => {
     return 'salas/' + salaId + '/webrtc/' + rol;
   }
 
+  /** F5 Fase 2b — Camino del snapshot de landmarks (subset reducido) de UN
+   *  jugador. Nodo separado del webrtc — no interfiere con la señalización. */
+  function caminoLandmarks(salaId, rol) {
+    return 'salas/' + salaId + '/landmarks/' + rol;
+  }
+
   /** ¿El rival está caído? Compara su último heartbeat contra ahora. */
   function rivalCaido(heartbeatRival, ahoraMs, timeoutS = TIMEOUT_RIVAL_S) {
     if (!heartbeatRival) return false;   // todavía no latió nunca: no lo matamos
@@ -622,6 +628,22 @@ const OnlineService = (() => {
     await remove(ref(fb.db, caminoWebrtc(sesion.salaId, sesion.rol))).catch(() => {});
   }
 
+  /** F5 Fase 2b — Sube MI snapshot de landmarks (subset reducido, [{x,y},...]).
+   *  set() (no update): siempre reemplaza entero, no hay merge que ensuciar. */
+  async function enviarLandmarks(puntos) {
+    if (!disponible || !sesion) return;
+    const { ref, set } = fb.DB;
+    await set(ref(fb.db, caminoLandmarks(sesion.salaId, sesion.rol)), puntos);
+  }
+
+  /** F5 Fase 2b — Escucha los landmarks del RIVAL en vivo. */
+  function escucharLandmarksRival(callback) {
+    if (!disponible || !sesion) return () => {};
+    const { ref, onValue } = fb.DB;
+    const rival = rolRival(sesion.rol);
+    return onValue(ref(fb.db, caminoLandmarks(sesion.salaId, rival)), (snap) => callback(snap.val()));
+  }
+
   /**
    * F4 — HEARTBEAT: late cada HEARTBEAT_S segundos para avisar "sigo vivo".
    * Arrancalo al entrar al duelo, pará al salir.
@@ -685,12 +707,14 @@ const OnlineService = (() => {
     iniciarHeartbeat, detenerHeartbeat, salir,
     // espectador (F5 — Fase 1: solo canal de datos, ver spectator.js)
     enviarSenalizacion, escucharSenalizacionRival, limpiarSenalizacion,
+    // espectador (F5 Fase 2b — esqueleto real)
+    enviarLandmarks, escucharLandmarksRival,
     // puras (export para tests / reuso)
     _puras: {
       configEsPlaceholder, generarCodigoSala, normalizarCodigo,
       codigoValido, rolRival, rivalCaido, proyectarEstado,
       generarUidBusqueda, decidirMatchmaking, slotEsMio,
-      caminoWebrtc
+      caminoWebrtc, caminoLandmarks
     }
   };
 })();

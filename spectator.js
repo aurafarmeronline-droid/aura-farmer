@@ -24,7 +24,10 @@ const SpectatorService = (() => {
     modo: 'inactivo',
     contenedorEl: null,
     videoEl: null,
+    canvasEl: null,
     remoteStream: null,
+    ultimosLandmarks: null,
+    unsubLandmarks: null,
     pc: null,
     unsubSenal: null,
     candidatosPendientes: [],
@@ -32,6 +35,11 @@ const SpectatorService = (() => {
     timeoutId: null,
     sessionId: 0
   };
+
+  // F5 Fase 2b — conexiones del esqueleto (mismo subset de índices que app.js:
+  // [nariz, hombro-I, hombro-D, codo-I, codo-D, muñeca-I, muñeca-D, cadera-I, cadera-D]
+  // reindexado 0-8 dentro del array reducido que viaja por Firebase).
+  const HUESOS = [[1, 2], [1, 3], [3, 5], [2, 4], [4, 6], [1, 7], [2, 8], [7, 8]];
 
   function siguienteModo(modoActual, evento) {
     switch (evento) {
@@ -55,9 +63,34 @@ const SpectatorService = (() => {
     return !remoteDescListo;
   }
 
+  function dibujarEsqueleto() {
+    if (!state.canvasEl || !state.ultimosLandmarks) return;
+    const ctx = state.canvasEl.getContext('2d');
+    const w = state.canvasEl.width, h = state.canvasEl.height;
+    ctx.clearRect(0, 0, w, h);
+    const pts = state.ultimosLandmarks;
+    ctx.strokeStyle = '#7F77DD';
+    ctx.fillStyle = '#534AB7';
+    ctx.lineWidth = 3;
+    HUESOS.forEach(([a, b]) => {
+      if (!pts[a] || !pts[b]) return;
+      ctx.beginPath();
+      ctx.moveTo(pts[a].x * w, pts[a].y * h);
+      ctx.lineTo(pts[b].x * w, pts[b].y * h);
+      ctx.stroke();
+    });
+    pts.forEach(p => {
+      if (!p) return;
+      ctx.beginPath();
+      ctx.arc(p.x * w, p.y * h, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
   function pintar() {
     if (!state.contenedorEl) return;
     if (state.modo === 'video' && state.remoteStream) {
+      state.canvasEl = null;
       if (!state.videoEl) {
         state.videoEl = document.createElement('video');
         state.videoEl.autoplay = true;
@@ -71,7 +104,23 @@ const SpectatorService = (() => {
       if (state.videoEl.srcObject !== state.remoteStream) state.videoEl.srcObject = state.remoteStream;
       return;
     }
+    if (state.modo === 'esqueleto') {
+      state.videoEl = null;
+      if (!state.canvasEl) {
+        state.canvasEl = document.createElement('canvas');
+        state.canvasEl.width = 160;
+        state.canvasEl.height = 200;
+        state.canvasEl.style.width = '100%';
+        state.canvasEl.style.background = 'var(--surface-2, #1B2631)';
+        state.canvasEl.style.borderRadius = '12px';
+        state.contenedorEl.textContent = '';
+        state.contenedorEl.appendChild(state.canvasEl);
+      }
+      dibujarEsqueleto();
+      return;
+    }
     state.videoEl = null;
+    state.canvasEl = null;
     state.contenedorEl.textContent = textoPlaceholder(state.modo);
     if (state.contenedorEl.dataset) state.contenedorEl.dataset.modo = state.modo;
   }
@@ -126,6 +175,16 @@ const SpectatorService = (() => {
       if (e.candidate) opts.enviarSenal({ candidate: e.candidate.toJSON() }).catch(() => {});
     };
 
+    // F5 Fase 2b — landmarks del rival para el fallback esqueleto. Se
+    // suscribe una sola vez por duelo, igual que la señalización.
+    if (opts.escucharLandmarksRival) {
+      state.unsubLandmarks = opts.escucharLandmarksRival((puntos) => {
+        if (miSesion !== state.sessionId) return;
+        state.ultimosLandmarks = puntos;
+        if (state.modo === 'esqueleto') dibujarEsqueleto();
+      });
+    }
+
     state.unsubSenal = opts.escucharSenalRival(async (datos) => {
       if (!datos || miSesion !== state.sessionId) return;
       try {
@@ -176,6 +235,9 @@ const SpectatorService = (() => {
     state.timeoutId = null;
     if (state.unsubSenal) state.unsubSenal();
     state.unsubSenal = null;
+    if (state.unsubLandmarks) state.unsubLandmarks();
+    state.unsubLandmarks = null;
+    state.ultimosLandmarks = null;
     if (state.pc) state.pc.close();
     state.pc = null;
     state.remoteStream = null;

@@ -146,6 +146,11 @@ let dueloUnsub = null;          // desuscriptor de la escucha del duelo online
 let esperandoRival = false;     // true mientras miro al rival jugar su turno
 let rivalYaJugoOnline = false;  // v1.6.1 — el rival ya cerró su turno (flag Firebase)
 let ultimoEnvioPuntaje = 0;     // v1.9.1 — throttle de envío de puntaje en vivo
+let ultimoEnvioLandmarks = 0;   // v2.2.4 — F5 Fase 2b — throttle de landmarks
+// F5 Fase 2b — subset de índices MediaPipe Pose (33 puntos) para el esqueleto
+// del rival: nariz, hombros, codos, muñecas, caderas. Liviano, alcanza para
+// una silueta reconocible sin mandar los 33 puntos completos.
+const LANDMARKS_ESPECTADOR = [0, 11, 12, 13, 14, 15, 16, 23, 24];
 let rivalNivelRemoto = 0;       // nivel histórico del rival desde la sala
 let farmeoState = null;        // estado interno de Farmeo
 let coreoActual = null;        // referencia al coreo que se está jugando
@@ -287,6 +292,13 @@ function startPoseDetection(video, canvas, poseChip) {
         if (ahora - ultimoEnvioPuntaje > 1500) {
           ultimoEnvioPuntaje = ahora;
           OnlineService.enviarPuntaje(resultado.puntajeTotal || 0, resultado.poseNombre).catch(() => {});
+        }
+        // F5 Fase 2b — landmarks del esqueleto, más seguido que el puntaje
+        // (~150ms) para que se vea fluido, pero sin saturar Firebase.
+        if (pose && ahora - ultimoEnvioLandmarks > 150) {
+          ultimoEnvioLandmarks = ahora;
+          const subset = LANDMARKS_ESPECTADOR.map(i => pose[i] ? { x: pose[i].x, y: pose[i].y } : null);
+          OnlineService.enviarLandmarks(subset).catch(() => {});
         }
       }
 
@@ -1298,6 +1310,7 @@ function mmEmpezarDuelo() {
       rol: miRolOnline,
       enviarSenal: OnlineService.enviarSenalizacion,
       escucharSenalRival: OnlineService.escucharSenalizacionRival,
+      escucharLandmarksRival: OnlineService.escucharLandmarksRival,
       obtenerStreamLocal: () => CameraService.streamActual()
     });
   }
