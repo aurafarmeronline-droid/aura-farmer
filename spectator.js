@@ -129,16 +129,16 @@ const SpectatorService = (() => {
     state.unsubSenal = opts.escucharSenalRival(async (datos) => {
       if (!datos || miSesion !== state.sessionId) return;
       try {
-        if (datos.offer && opts.rol === 'B' && !pc.currentRemoteDescription) {
+        if (datos.offer && opts.rol === 'B' && !state.remoteDescListo) {
+          state.remoteDescListo = true;   // seteo YA (síncrono) para cortar la carrera de re-entradas
           await pc.setRemoteDescription(datos.offer);
-          state.remoteDescListo = true;
           state.candidatosPendientes.splice(0).forEach(c => pc.addIceCandidate(c).catch(() => {}));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await opts.enviarSenal({ answer: { type: answer.type, sdp: answer.sdp } });
-        } else if (datos.answer && opts.rol === 'A' && !pc.currentRemoteDescription) {
-          await pc.setRemoteDescription(datos.answer);
+        } else if (datos.answer && opts.rol === 'A' && !state.remoteDescListo) {
           state.remoteDescListo = true;
+          await pc.setRemoteDescription(datos.answer);
           state.candidatosPendientes.splice(0).forEach(c => pc.addIceCandidate(c).catch(() => {}));
         }
         if (datos.candidate) {
