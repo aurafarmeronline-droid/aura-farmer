@@ -114,7 +114,13 @@ const SpectatorService = (() => {
     pc.ontrack = (e) => {
       if (miSesion !== state.sessionId) return;
       state.remoteStream = e.streams[0];
-      cambiarModo('conexion-ok');
+      if (['connected', 'completed'].includes(pc.iceConnectionState)) cambiarModo('conexion-ok');
+    };
+    pc.oniceconnectionstatechange = () => {
+      if (miSesion !== state.sessionId) return;
+      if (['connected', 'completed'].includes(pc.iceConnectionState) && state.remoteStream) {
+        cambiarModo('conexion-ok');
+      }
     };
     pc.onicecandidate = (e) => {
       if (e.candidate) opts.enviarSenal({ candidate: e.candidate.toJSON() }).catch(() => {});
